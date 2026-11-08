@@ -1,0 +1,7 @@
+# Fikrin Çıkış noktası
+
+Her şey  [Aykut Gökbulut](https://github.com/4ykutG)'un  açık kaynak bir **üniversite bilgi sistemi (UBS)** yapma fikrini ortaya atması ile başladı. Fikir ortaya çıktığında potansiyeli yüksek bir proje olarak benimsedik ancak böyle bir yapının çalışması için kurumsal altyapı kaçınılmazdı. Kurum ya da üniversitenin dosya transferleri yapabilmesi için bir dizin yönetim yapısına, yani bir active directory'e, e-posta gönderimini sağlayacak mail servislerine ve kullanıcıların kimlik bilgilerinin tutulacağı ve doğrulama işlemlerinin yapılacağı authorization servislerine ihtiyaç vardı.
+
+Günümüzde kurumsal firmaların neredeyse hepsi altyapısını Microsoft'un active directory, exchange ve entera ID gibi kapalı kaynak lisanslı ürünler ile işletiyor. Bu da şu soruları doğurdu: Microsoft'un altyapısı üzerinde çalışmak zorunda kalan açık kaynak bir yazılım, böyle bir ortamda yeterince destek bulabilir mi? Uygulamanın kendisi açık olsa da altındaki her şey kapalı ve tek bir tedarikçiye bağlıysa, uygulama uzun vadede yaşayabilir mi?
+
+Bu nedenle önce altyapının kendisinin açık kaynak olması gerektiği düşüncesi ortaya çıktı ve [benim](https://github.com/DevErenOzcan) tarafımdan inşa edilmeye başlandı. 
