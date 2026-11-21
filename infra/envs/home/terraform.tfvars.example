@@ -1,0 +1,7 @@
+release             = "0.1.0"
+opnsense_version    = "26.1"
+opnsense_image_url  = "https://pkg.opnsense.org/releases/26.1/OPNsense-26.1-nano-amd64.img.bz2"
+ssh_authorized_keys = ["ssh-ed25519 AAAA... librenfra"]
+realm               = "AD.ORNEK.COM"
+netbios_domain      = "ORNEK"
+# dc_admin_password secret'tır: TF_VAR_dc_admin_password ortam değişkeniyle verilir.

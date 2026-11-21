@@ -1,0 +1,16 @@
+[Unit]
+Description=Librenfra dc servis adlarının (SPN) güncellenmesi
+# Samba ldap/ gibi SPN'leri açılışta samba_spnupdate ile ekler ve süre aşımında bir daha
+# denemez; o durumda LDAP'a Kerberos ile bağlanılamaz. Bu birim aynı işi samba
+# açıldıktan sonra yeniden yapar; kayıtlar varsa bir şey değiştirmez.
+Requires=samba.service
+After=samba.service
+PartOf=samba.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/samba_spnupdate
+
+[Install]
+WantedBy=samba.service

@@ -1,0 +1,13 @@
+[Unit]
+Description=Librenfra servis hesapları ve grupları
+Requires=samba.service
+After=samba.service librenfra-dc-spn.service
+ConditionPathExists=/etc/librenfra/dc-accounts
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/librenfra/dc-accounts
+
+[Install]
+WantedBy=multi-user.target

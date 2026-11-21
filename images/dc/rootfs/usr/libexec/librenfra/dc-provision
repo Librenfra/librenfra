@@ -1,0 +1,35 @@
+#!/bin/bash
+# Samba AD domain'ini kurar. Yalnızca /var/lib/samba/private altında hiç dosya yokken
+# çalışır (paketlerin açtığı boş dizinler sayılmaz).
+# Girdiler (/etc/librenfra/dc.conf):
+#   LIBRENFRA_REALM          ör. KURUM.LAN
+#   LIBRENFRA_DOMAIN         ör. KURUM
+#   LIBRENFRA_DNS_FORWARDER  ör. 1.1.1.1
+# Secret: yönetici parolası systemd credential olarak gelir (admin-password).
+set -euo pipefail
+
+: "${LIBRENFRA_REALM:?}" "${LIBRENFRA_DOMAIN:?}"
+
+if [ -n "$(find /var/lib/samba/private -type f -print -quit 2>/dev/null)" ]; then
+    echo "/var/lib/samba/private altında dosya var, domain kurulumu yapılmıyor" >&2
+    exit 1
+fi
+
+pw_file="$CREDENTIALS_DIRECTORY/admin-password"
+args=(
+    --realm="$LIBRENFRA_REALM"
+    --domain="$LIBRENFRA_DOMAIN"
+    --server-role=dc
+    --dns-backend=SAMBA_INTERNAL
+    --use-rfc2307
+    --adminpass="$(cat "$pw_file")"
+)
+if [ -n "${LIBRENFRA_DNS_FORWARDER:-}" ]; then
+    args+=(--option="dns forwarder = $LIBRENFRA_DNS_FORWARDER")
+fi
+
+# Samba'nın ürettiği smb.conf /etc'ye değil /var'a yazılır. /etc her deployment'ın kendi
+# kopyasıdır; bootc rollback, domain kurulmadan önce hazırlanmış bir deployment'a dönerse
+# /etc'ye yazılan dosya orada bulunmaz. İmajdaki /etc/samba/smb.conf bağlantısı
+# /var/lib/samba/etc/smb.conf dosyasını gösterir.
+samba-tool domain provision "${args[@]}"

@@ -1,0 +1,19 @@
+[Unit]
+Description=Librenfra: Samba AD domain'ini ilk açılışta kur
+Documentation=https://github.com/Librenfra/librenfra
+# Makineye özgü ayarlar cloud-init tarafından yazılır.
+After=cloud-config.service network-online.target
+Wants=network-online.target
+Before=samba.service
+ConditionPathExists=/etc/librenfra/dc.conf
+ConditionPathExists=!/var/lib/samba/private/sam.ldb
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/librenfra/dc.conf
+LoadCredential=admin-password:/etc/librenfra/secrets/dc-admin-password
+ExecStart=/usr/libexec/librenfra/dc-provision
+
+[Install]
+WantedBy=multi-user.target

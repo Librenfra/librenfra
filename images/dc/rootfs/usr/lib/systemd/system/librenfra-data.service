@@ -1,0 +1,12 @@
+[Unit]
+Description=Librenfra veri diski (/var/lib/samba)
+Before=librenfra-dc-provision.service samba.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/librenfra/data-disk /var/lib/samba
+ExecStop=/usr/bin/umount /var/lib/samba
+
+[Install]
+WantedBy=multi-user.target

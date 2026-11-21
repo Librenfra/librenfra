@@ -1,0 +1,8 @@
+node_name           = "pve"
+ssh_authorized_keys = ["ssh-ed25519 AAAA... kullanici@makine"]
+dc_image_url        = "https://example.org/librenfra-dc-0.1.0.qcow2"
+dc_image_version    = "0.1.0"
+dc1_ipv4            = "10.10.0.10/24"
+ipv4_gateway        = "10.10.0.1"
+dns_forwarder       = "10.10.0.1"
+# dc_admin_password: TF_VAR_dc_admin_password ortam değişkeniyle verin.

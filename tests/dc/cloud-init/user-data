@@ -1,0 +1,44 @@
+#cloud-config
+# Yalnızca test: parolalar test değerleridir.
+hostname: dc
+fqdn: dc.test.lan
+# Samba makinenin kısa adını NetBIOS adı olarak kullanır; ad FQDN olmamalı.
+prefer_fqdn_over_hostname: false
+users:
+  - name: librenfra
+    groups: [wheel]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys: ["@SSH_PUBKEY@"]
+manage_etc_hosts: false
+write_files:
+  - path: /etc/hosts
+    content: |
+      127.0.0.1 localhost localhost.localdomain
+      ::1       localhost localhost.localdomain
+      10.0.2.15 dc.test.lan dc
+  - path: /etc/librenfra/dc.conf
+    content: |
+      LIBRENFRA_REALM=TEST.LAN
+      LIBRENFRA_DOMAIN=TEST
+      LIBRENFRA_DNS_FORWARDER=10.0.2.3
+  - path: /etc/krb5.conf.d/librenfra-realm
+    content: |
+      [libdefaults]
+          default_realm = TEST.LAN
+          dns_lookup_realm = false
+          dns_lookup_kdc = true
+  - path: /etc/librenfra/secrets/dc-admin-password
+    permissions: "0600"
+    content: "Test-Parola-2026!"
+  - path: /etc/containers/registries.conf.d/50-vmtest.conf
+    content: |
+      [[registry]]
+      location = "10.0.2.2:5000"
+      insecure = true
+  - path: /etc/librenfra/dc-accounts
+    content: |
+      group test-grubu
+      user svc-test test-grubu
+  - path: /etc/librenfra/secrets/svc-test
+    permissions: "0600"
+    content: "Svc-Parola-2026!"

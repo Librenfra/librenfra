@@ -1,0 +1,49 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${fqdn}
+# Samba makinenin kısa adını NetBIOS adı olarak kullanır; ad FQDN olmamalı.
+prefer_fqdn_over_hostname: false
+users:
+  - name: librenfra
+    groups: [wheel]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys: ${jsonencode(ssh_authorized_keys)}
+manage_etc_hosts: false
+write_files:
+  # Samba, makinenin adının gerçek adresine çözülmesini ister.
+  - path: /etc/hosts
+    permissions: "0644"
+    content: |
+      127.0.0.1 localhost localhost.localdomain
+      ::1       localhost localhost.localdomain
+      ${ipv4_address} ${fqdn} ${hostname}
+  - path: /etc/librenfra/dc.conf
+    permissions: "0644"
+    content: |
+      LIBRENFRA_REALM=${realm}
+      LIBRENFRA_DOMAIN=${netbios_domain}
+      LIBRENFRA_DNS_FORWARDER=${dns_forwarder}
+  - path: /etc/krb5.conf.d/librenfra-realm
+    permissions: "0644"
+    content: |
+      [libdefaults]
+          default_realm = ${realm}
+          dns_lookup_realm = false
+          dns_lookup_kdc = true
+  - path: /etc/librenfra/secrets/dc-admin-password
+    permissions: "0600"
+    content: ${jsonencode(admin_password)}
+  - path: /etc/librenfra/dc-accounts
+    permissions: "0644"
+    content: |
+%{ for g in groups ~}
+      group ${g}
+%{ endfor ~}
+%{ for name, a in service_accounts ~}
+      user ${name} ${join(",", a.groups)}
+%{ endfor ~}
+%{ for name, a in service_accounts ~}
+  - path: /etc/librenfra/secrets/${name}
+    permissions: "0600"
+    content: ${jsonencode(a.password)}
+%{ endfor ~}

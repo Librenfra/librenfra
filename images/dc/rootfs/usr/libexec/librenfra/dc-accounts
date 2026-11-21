@@ -1,0 +1,31 @@
+#!/bin/bash
+# Diğer rollerin ihtiyaç duyduğu grupları ve servis hesaplarını açar. Her açılışta çalışır;
+# olanlara dokunmaz, eksikleri ekler.
+# Liste (/etc/librenfra/dc-accounts), satır başına bir kayıt:
+#   group <ad>
+#   user  <ad> [grup,grup...]
+# Kullanıcı parolası /etc/librenfra/secrets/<ad> dosyasındadır.
+set -euo pipefail
+
+while read -r kind name groups; do
+    case $kind in
+    '' | \#*) continue ;;
+    group)
+        samba-tool group show "$name" >/dev/null 2>&1 || samba-tool group add "$name"
+        ;;
+    user)
+        if ! samba-tool user show "$name" >/dev/null 2>&1; then
+            samba-tool user create "$name" "$(cat "/etc/librenfra/secrets/$name")"
+            samba-tool user setexpiry "$name" --noexpiry
+        fi
+        for g in ${groups//,/ }; do
+            samba-tool group listmembers "$g" | grep -qxF "$name" ||
+                samba-tool group addmembers "$g" "$name"
+        done
+        ;;
+    *)
+        echo "bilinmeyen kayıt: $kind" >&2
+        exit 1
+        ;;
+    esac
+done </etc/librenfra/dc-accounts

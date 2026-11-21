@@ -1,0 +1,22 @@
+# Librenfra dizin sunucusu (Samba AD DC)
+# samba-dc paketi CentOS Stream 10'da bulunmadığı için taban Fedora'dır.
+FROM quay.io/fedora/fedora-bootc:43
+
+RUN dnf -y install --setopt=install_weak_deps=0 \
+        samba-dc samba-client \
+        krb5-workstation bind-utils openldap-clients \
+        cloud-init \
+    && dnf clean all \
+    && rm -rf /var/cache/* /var/log/* /var/lib/dnf /run/cloud-init /run/dnf /run/krb5kdc
+
+COPY rootfs/ /
+
+RUN chmod 0755 /usr/libexec/librenfra/* \
+    && ln -sf /var/lib/samba/etc/smb.conf /etc/samba/smb.conf \
+    && systemctl enable librenfra-data.service librenfra-dc-provision.service samba.service librenfra-dc-accounts.service librenfra-dc-spn.service chronyd.service cloud-init.target
+
+ARG VERSION=0.0.0-dev
+LABEL org.opencontainers.image.version="${VERSION}"
+RUN mkdir -p /usr/lib/librenfra && echo "${VERSION}" > /usr/lib/librenfra/dc-version
+
+RUN bootc container lint
