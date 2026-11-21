@@ -41,17 +41,6 @@ Laboratuvardaki kurulumda `private` dizini 42 MB, SYSVOL 96 KB, `smb.conf` 10 sa
 | DKIM anahtarları | Seçilecek DKIM aracına göre | Secret |
 | Spam filtresinin öğrenme verisi | Seçilecek spam filtresine göre | Veri |
 
-### Tek oturum açma: Keycloak
-
-| Veri | Yol | Tür |
-| --- | --- | --- |
-| Realm'ler, istemciler, yerel kullanıcılar, oturumlar | PostgreSQL veritabanı (`/var/lib/postgresql`) | Veri |
-| İstemci secret'ları, imza anahtarları | PostgreSQL veritabanı | Secret |
-| Keycloak yapılandırması | `conf/keycloak.conf` | Yapılandırma |
-| Truststore (DC'nin CA sertifikası) | `conf/truststores/` | Yapılandırma |
-
-Keycloak'ın varsayılan `dev-file` veritabanı Keycloak belgelerine göre yalnızca geliştirme içindir ve verisini kurulum dizininin altındaki `data/` dizinine yazar. Üretimde veritabanı PostgreSQL'dir. Keycloak 26 ile oturumlar da varsayılan olarak veritabanında tutulur.
-
 ### Kablosuz ağ doğrulama: FreeRADIUS
 
 | Veri | Yol | Tür |

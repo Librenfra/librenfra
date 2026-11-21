@@ -1,7 +1,8 @@
 # 0001. İşletim sistemi seviyesinde stateless yapı
 
-- **Durum:** Açık
+- **Durum:** Kabul edildi
 - **Tarih:** 2026-11-08
+- **Karar tarihi:** 2026-11-21
 
 ## Bağlam
 
@@ -131,5 +132,17 @@ Her seçenek aynı dört soruyla değerlendirildi:
 
 ## Karar
 
-Henüz verilmedi.
+İşletim sistemi katmanı **bootc** ile geliştirilecek.
 
+- Özet tablosunda dört ölçütün dördünde de güçlü çıkan tek seçenek bootc'dur.
+- bootc, upstream projesindeki haliyle kullanılır; fork'lanmaz. Proje CNCF bünyesinde aktif olarak geliştiriliyor ve Librenfra'nın ihtiyaç duyduğu konularda (ör. `/var`'ın yönetimi) çalışmalar sürüyor.
+- **Gerektiğinde bootc'yi geliştirme yoluna gidilebilir.** Librenfra'nın ihtiyaç duyduğu ama bootc'de bulunmayan bir özellik, ayrı bir yazılım olarak değil, bootc'ye açık kaynak katkı olarak geliştirilir. Bugünden görülen örnekler:
+    - composefs arka ucunda bağlı imaj (logically bound images) desteği ([bootc#2540](https://github.com/bootc-dev/bootc/issues/2540))
+    - Debian ve Ubuntu tabanlı imajlar ([bootc#865](https://github.com/bootc-dev/bootc/issues/865))
+    - Ayrı bir bölümdeki `/var`'ın imajdan doldurulması ([bootc#2599](https://github.com/bootc-dev/bootc/issues/2599))
+
+## Sonuçlar
+
+- Librenfra'nın her sunucu rolü bir bootc imajı olarak tanımlanır, OCI registry'de yayınlanır ve `bootc upgrade` / `bootc rollback` ile güncellenir.
+- Taban dağıtım, bootc'nin resmi olarak desteklediği dağıtımlarla (Fedora, CentOS Stream, RHEL, AlmaLinux) sınırlıdır. Bunun dışına çıkmak bootc'ye katkı gerektirir.
+- bootc'nin davranışı ve sınırları laboratuvarda kurulum denemeleriyle doğrulanacak.
