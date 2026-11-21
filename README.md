@@ -10,6 +10,7 @@ Kurumların kimlik, posta ve dosya altyapısı bugün büyük ölçüde yüksek 
 1. [Fikrin çıkış noktası](docs/01-fikrin-cikis-noktasi.md): projenin açık kaynak bir UBS fikrinden nasıl doğduğu ve neden önce altyapının açık olması gerektiği
 2. [Stateless yapı](docs/02-stateless-yapi.md): kurumlara sürümlü bir altyapı sunabilmek için işletim sistemi seviyesinde neden stateless bir yapıya ihtiyaç duyulduğu
 3. [Entegrasyon](docs/03-entegrasyon.md): Librenfra altyapısının kurumların farklı ortamlarıyla uyumlu hale getirilmesi: birinci aşamada dikkat edilecekler ve ikinci aşamadaki çok ortam desteği
+4. [Veri yönetimi](docs/04-veri-yonetimi.md): servislerin hangi verileri tuttuğu ve bootc'un bu verileri nasıl yönettiği
 
 ### Karar kayıtları
 
