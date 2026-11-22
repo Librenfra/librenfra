@@ -1,0 +1,1 @@
+Kubernetes düğümlerinin veri diski yoktur; role-test.sh veri diski aşamasını atlar.

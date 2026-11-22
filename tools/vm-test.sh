@@ -10,16 +10,23 @@
 #   vm-test.sh stop   <ad>                               makineyi kapatır
 #
 # <cloud-init-dizini>: user-data, meta-data ve isteğe bağlı network-config.
-# user-data içindeki @SSH_PUBKEY@ test anahtarıyla değiştirilir.
+# user-data içinde:
+#   @SSH_PUBKEY@   test anahtarıyla
+#   @B64:<dosya>@  VMTEST_FILES dizinindeki dosyanın base64 içeriğiyle değiştirilir
+#                  (write_files'ta "encoding: b64" ile; ör. test sertifikaları)
 #
 # Her makinenin iki ağ kartı vardır:
 #   1. QEMU user ağı: internet ve host'tan SSH (127.0.0.1:<port>), host 10.0.2.2
-#   2. Test segmenti: aynı VMTEST_SEGMENT'teki makineler arasında ortak L2 ağı
+#   2. Test segmenti: aynı VMTEST_SEGMENT'teki makineler arasında ortak L2 ağı.
+#      Adresi network-config ile verilir.
+# Kart adları dağıtıma göre değiştiği için network-config kartları MAC adresiyle seçer:
+# @NIC0_MAC@ ve @NIC1_MAC@ makinenin adresleriyle değiştirilir.
 #
 # Ortam değişkenleri:
 #   VMTEST_DIR           durum dizini (varsayılan /tmp/vm-test)
 #   VMTEST_SEGMENT       test segmentinin UDP multicast portu (varsayılan 31234)
 #   VMTEST_MEMORY        MB (varsayılan 3072)
+#   VMTEST_FILES         @B64:...@ yer tutucularının okunduğu dizin
 #   VMTEST_DIRECT_KERNEL 1 ise önyükleyici yerine diskin BLS girdisindeki çekirdekle açar
 #                        (önyükleyicisi olmayan diskler için; ham disk ve root gerekir)
 set -euo pipefail
@@ -37,6 +44,11 @@ vm_ssh() {
     ssh "${ssh_opts[@]}" -p "$(cat "$dir/$name/port")" librenfra@127.0.0.1 "$@"
 }
 
+# Segmentteki MAC adresi makinenin adından türetilir; segmentte her makineninki farklıdır.
+segment_mac() {
+    printf '52:54:00:%s' "$(echo -n "$1" | md5sum | sed 's/^\(..\)\(..\)\(..\).*/\1:\2:\3/')"
+}
+
 boot() {
     local name=$1 m="$dir/$1"
     local disk; disk=$(cat "$m/disk")
@@ -52,14 +64,14 @@ boot() {
         direct_kernel "$m" "$disk"
         kargs=(-kernel "$m/vmlinuz" -initrd "$m/initrd" -append "$(cat "$m/cmdline") console=ttyS0")
     fi
-    local mac; mac=$(printf '52:54:00:%s' "$(echo -n "$name" | md5sum | sed 's/^\(..\)\(..\)\(..\).*/\1:\2:\3/')")
+    local mac; mac=$(segment_mac "$name")
     qemu-system-x86_64 -accel "$accel" -cpu "$cpu" -smp 2 -m "${VMTEST_MEMORY:-3072}" \
         "${kargs[@]}" \
         -drive file="$disk",format="$(cat "$m/format")",if=virtio \
         -drive file="$m/seed.iso",format=raw,if=virtio,readonly=on \
         "${data[@]}" \
         -netdev user,id=n0,hostfwd=tcp:127.0.0.1:"$(cat "$m/port")"-:22 \
-        -device virtio-net-pci,netdev=n0 \
+        -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56 \
         -netdev socket,id=n1,mcast=230.0.0.1:"${VMTEST_SEGMENT:-31234}" \
         -device virtio-net-pci,netdev=n1,mac="$mac" \
         -display none -serial file:"$m/console.log" \
@@ -103,9 +115,18 @@ start)
     fi
     python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])' > "$m/port"
     mkdir -p "$m/seed"
-    sed "s|@SSH_PUBKEY@|$(cat "$key.pub")|" "$ci/user-data" > "$m/seed/user-data"
+    python3 - "$ci/user-data" "$key.pub" "${VMTEST_FILES:-}" > "$m/seed/user-data" <<'PY'
+import base64, os, re, sys
+text, pub, files = open(sys.argv[1]).read(), open(sys.argv[2]).read().strip(), sys.argv[3]
+def b64(m):
+    return base64.b64encode(open(os.path.join(files, m.group(1)), "rb").read()).decode()
+print(re.sub(r"@B64:([^@]+)@", b64, text.replace("@SSH_PUBKEY@", pub)), end="")
+PY
     cp "$ci/meta-data" "$m/seed/"
-    [ -f "$ci/network-config" ] && cp "$ci/network-config" "$m/seed/"
+    if [ -f "$ci/network-config" ]; then
+        sed -e "s|@NIC0_MAC@|52:54:00:12:34:56|g" -e "s|@NIC1_MAC@|$(segment_mac "$name")|g" \
+            "$ci/network-config" > "$m/seed/network-config"
+    fi
     genisoimage -quiet -output "$m/seed.iso" -volid cidata -joliet -rock "$m/seed"/*
     boot "$name"
     echo "$name açıldı: ssh -p $(cat "$m/port") librenfra@127.0.0.1"

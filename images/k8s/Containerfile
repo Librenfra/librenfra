@@ -1,0 +1,33 @@
+FROM quay.io/centos-bootc/centos-bootc:stream10
+
+# Kubernetes sürümü imaj sürümüne bağlıdır. Küme sürüm geçişi kubeadm'in kurallarına uyar:
+# bir seferde en çok bir küçük sürüm, önce kontrol düğümü, sonra çalışan düğüm.
+# Küçük sürüm değişirken yum.repos.d'deki depo adresleri de değişir.
+ARG KUBERNETES_VERSION=1.37.2
+ARG CRIO_VERSION=1.37.4
+ARG CALICO_VERSION=3.33.1
+ARG CALICO_SHA256=3368e62807b949438842e31f46c9b6df741731b4c755d0a622dd062b2cb20495
+
+COPY rootfs/etc/yum.repos.d/ /etc/yum.repos.d/
+RUN dnf -y install --setopt=install_weak_deps=0 \
+        kubelet-${KUBERNETES_VERSION} kubeadm-${KUBERNETES_VERSION} kubectl-${KUBERNETES_VERSION} \
+        cri-o-${CRIO_VERSION} cri-tools conntrack-tools cloud-init \
+    && dnf clean all \
+    && rm -rf /var/cache/* /var/log/* /var/lib/dnf /run/*
+
+RUN mkdir -p /usr/share/librenfra/k8s/calico \
+    && curl -fsSL -o /usr/share/librenfra/k8s/calico/calico.yaml \
+        https://raw.githubusercontent.com/projectcalico/calico/v${CALICO_VERSION}/manifests/calico.yaml \
+    && echo "${CALICO_SHA256}  /usr/share/librenfra/k8s/calico/calico.yaml" | sha256sum -c
+
+COPY rootfs/ /
+# kubeadm'in yazdıkları /var'da tutulur (bkz. tmpfiles.d/librenfra-k8s.conf).
+RUN rm -rf /etc/kubernetes && ln -s ../var/lib/kubernetes /etc/kubernetes \
+    && chmod 0755 /usr/libexec/librenfra/* \
+    && systemctl enable crio.service kubelet.service librenfra-k8s.service cloud-init.target \
+    && systemctl mask bootc-fetch-apply-updates.timer
+
+ARG VERSION=0.0.0-dev
+LABEL org.opencontainers.image.version="${VERSION}"
+RUN mkdir -p /usr/lib/librenfra && echo "${VERSION}" > /usr/lib/librenfra/k8s-version
+RUN bootc container lint

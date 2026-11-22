@@ -1,0 +1,12 @@
+[Unit]
+Description=Librenfra veri diski (/var/lib/librenfra: runner ve OpenTofu state'i)
+Before=librenfra-runner-setup.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/librenfra/data-disk /var/lib/librenfra
+ExecStop=/usr/bin/umount /var/lib/librenfra
+
+[Install]
+WantedBy=multi-user.target

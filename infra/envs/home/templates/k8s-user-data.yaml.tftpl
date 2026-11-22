@@ -1,0 +1,35 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${fqdn}
+prefer_fqdn_over_hostname: false
+users:
+  - name: librenfra
+    groups: [wheel]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys: ${jsonencode(ssh_authorized_keys)}
+manage_etc_hosts: false
+write_files:
+  - path: /etc/hosts
+    permissions: "0644"
+    content: |
+      127.0.0.1 localhost localhost.localdomain
+      ::1       localhost localhost.localdomain
+      ${ipv4_address} ${fqdn} ${hostname}
+  - path: /etc/librenfra/k8s.conf
+    permissions: "0644"
+    content: |
+      LIBRENFRA_K8S_ROLE=${role}
+      LIBRENFRA_K8S_NODE_IP=${ipv4_address}
+      LIBRENFRA_K8S_ENDPOINT=${endpoint}
+      LIBRENFRA_DC=${dc_fqdn}
+  - path: /etc/librenfra/k8s-ca.crt
+    permissions: "0644"
+    content: ${jsonencode(ca_cert)}
+%{ if ca_key != null ~}
+  - path: /etc/librenfra/secrets/k8s-ca.key
+    permissions: "0600"
+    content: ${jsonencode(ca_key)}
+%{ endif ~}
+  - path: /etc/librenfra/secrets/k8s-bootstrap-token
+    permissions: "0600"
+    content: ${jsonencode(bootstrap_token)}

@@ -1,0 +1,34 @@
+# calico.yaml imaj derlenirken Calico'nun sürümüne sabitlenmiş adresinden indirilir (Containerfile).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - calico.yaml
+patches:
+  - target:
+      kind: DaemonSet
+      name: calico-node
+      namespace: kube-system
+    patch: |
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata:
+        name: calico-node
+        namespace: kube-system
+      spec:
+        template:
+          spec:
+            containers:
+              - name: calico-node
+                env:
+                  # kubeadm'in podSubnet'i (/usr/libexec/librenfra/k8s-node)
+                  - name: CALICO_IPV4POOL_CIDR
+                    value: 10.244.0.0/16
+                  # Düğümün kubelet'e verilen adresi; ilk bulunan karta güvenilmez.
+                  - name: IP_AUTODETECTION_METHOD
+                    value: kubernetes-internal-ip
+            volumes:
+              # /opt salt okunurdur (bkz. /etc/crio/crio.conf.d/20-librenfra.conf).
+              - name: cni-bin-dir
+                hostPath:
+                  path: /var/lib/cni/bin
+                  type: DirectoryOrCreate

@@ -15,12 +15,13 @@ write_files:
     content: |
       127.0.0.1 localhost localhost.localdomain
       ::1       localhost localhost.localdomain
-      10.0.2.15 dc.test.lan dc
+      10.99.0.10 dc.test.lan dc
   - path: /etc/librenfra/dc.conf
     content: |
       LIBRENFRA_REALM=TEST.LAN
       LIBRENFRA_DOMAIN=TEST
       LIBRENFRA_DNS_FORWARDER=10.0.2.3
+      LIBRENFRA_ADDRESS=10.99.0.10
   - path: /etc/krb5.conf.d/librenfra-realm
     content: |
       [libdefaults]
@@ -37,8 +38,18 @@ write_files:
       insecure = true
   - path: /etc/librenfra/dc-accounts
     content: |
-      group test-grubu
-      user svc-test test-grubu
-  - path: /etc/librenfra/secrets/svc-test
+      group mail-users
+      user svc-mail
+  - path: /etc/librenfra/secrets/svc-mail
     permissions: "0600"
-    content: "Svc-Parola-2026!"
+    content: "Svc-Mail-Parola-2026!"
+  - path: /etc/librenfra/ca.pem
+    encoding: b64
+    content: "@B64:ca.pem@"
+  - path: /etc/librenfra/dc-tls-cert.pem
+    encoding: b64
+    content: "@B64:dc.test.lan-cert.pem@"
+  - path: /etc/librenfra/secrets/dc-tls-key.pem
+    permissions: "0600"
+    encoding: b64
+    content: "@B64:dc.test.lan-key.pem@"

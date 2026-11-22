@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.7"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.1"
+    }
   }
   # State ops'un veri diskindedir. Yol init sırasında verilir:
   #   tofu init -backend-config=path=/var/lib/librenfra/tofu/home.tfstate

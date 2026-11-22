@@ -1,0 +1,86 @@
+#!/bin/bash
+# Postfix ve Dovecot'un dizin ayarını /etc/librenfra/mail.conf'tan /run/librenfra altına üretir.
+# Her açılışta çalışır; imajdaki ayar dosyaları bu dosyaları okur.
+# Girdiler (/etc/librenfra/mail.conf):
+#   LIBRENFRA_MAIL_DOMAINS  posta alınan alan adları, boşlukla ayrılmış (ör. "kurum.com")
+#   LIBRENFRA_REALM         AD alanı (ör. AD.KURUM.COM)
+#   LIBRENFRA_DC            dizin sunucusunun adı (ör. dc.ad.kurum.com)
+# Secret: /etc/librenfra/secrets/svc-mail (dizine bağlanan servis hesabının parolası),
+#         /etc/librenfra/secrets/dkim.key (isteğe bağlı; giden postanın DKIM anahtarı).
+# Dizinin sertifikasını imzalayan CA: /etc/librenfra/ca.pem.
+set -euo pipefail
+. /etc/librenfra/mail.conf
+: "${LIBRENFRA_MAIL_DOMAINS:?}" "${LIBRENFRA_REALM:?}" "${LIBRENFRA_DC:?}"
+
+realm_lc=${LIBRENFRA_REALM,,}
+base=DC=${realm_lc//./,DC=}
+bind_dn=svc-mail@$LIBRENFRA_REALM
+bind_pw=$(cat /etc/librenfra/secrets/svc-mail)
+uri=ldaps://$LIBRENFRA_DC
+ca=/etc/librenfra/ca.pem
+# Etkin kullanıcılar ve gruplar; devre dışı hesaplar (userAccountControl bit 2) alınmaz.
+active='(!(userAccountControl:1.2.840.113556.1.4.803:=2))'
+by_address='(|(mail=%s)(proxyAddresses=smtp:%s))'
+
+p=/run/librenfra/postfix d=/run/librenfra/dovecot
+install -d -m 0750 -g postfix "$p"
+install -d -m 0750 -g dovecot "$d"
+umask 027
+
+printf '%s\n' $LIBRENFRA_MAIL_DOMAINS > "$p/domains"
+
+ldap_map() { # <dosya> <süzgeç> <sonuç-özniteliği>
+    cat > "$p/$1" <<CF
+server_host = $uri
+version = 3
+bind = yes
+bind_dn = $bind_dn
+bind_pw = $bind_pw
+tls_ca_cert_file = $ca
+tls_require_cert = yes
+search_base = $base
+scope = sub
+query_filter = $2
+result_attribute = $3
+CF
+}
+ldap_map recipients.cf "(&(objectCategory=person)(objectClass=user)$by_address$active)" sAMAccountName
+ldap_map senders.cf    "(&(objectCategory=person)(objectClass=user)$by_address$active)" sAMAccountName
+chgrp postfix "$p"/*.cf
+
+# Kullanıcı hem kısa adıyla (ali) hem adresiyle (ali@kurum.com) bulunur; posta kutusu
+# kısa adın dizinindedir.
+cat > "$d/ldap.conf.ext" <<CF
+uris = $uri
+tls_ca_cert_file = $ca
+tls_require_cert = hard
+dn = $bind_dn
+dnpass = $bind_pw
+auth_bind = yes
+base = $base
+scope = subtree
+user_filter = (&(objectCategory=person)(objectClass=user)(|(sAMAccountName=%n)(mail=%u)(proxyAddresses=smtp:%u))$active)
+user_attrs = =user=%{ldap:sAMAccountName}, =home=/var/vmail/%{ldap:sAMAccountName}
+pass_filter = (&(objectCategory=person)(objectClass=user)(sAMAccountName=%n)$active)
+pass_attrs = sAMAccountName=user
+iterate_attrs = =user=%{ldap:sAMAccountName}
+iterate_filter = (&(objectCategory=person)(objectClass=user)(mail=*)$active)
+CF
+chgrp dovecot "$d/ldap.conf.ext"
+
+# DKIM: her alan adı için aynı anahtar, "librenfra" seçicisiyle (rspamd local.d/dkim_signing.conf).
+k=/run/librenfra/rspamd/dkim
+rm -rf "$k"
+if [ -f /etc/librenfra/secrets/dkim.key ]; then
+    install -d -m 0750 -g _rspamd "$k"
+    for domain in $LIBRENFRA_MAIL_DOMAINS; do
+        install -m 0640 -g _rspamd /etc/librenfra/secrets/dkim.key "$k/$domain.key"
+    done
+fi
+
+# /run altındaki dosyalar SELinux'ta var_run_t olur; Postfix ve Dovecot yalnızca kendi
+# ayar türlerini okuyabilir.
+if selinuxenabled 2>/dev/null; then
+    chcon -R -t postfix_etc_t "$p"
+    chcon -R -t dovecot_etc_t "$d"
+fi

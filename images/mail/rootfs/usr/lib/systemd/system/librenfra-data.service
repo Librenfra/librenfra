@@ -1,0 +1,12 @@
+[Unit]
+Description=Librenfra veri diski (/var/vmail)
+Before=dovecot.service postfix.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/librenfra/data-disk /var/vmail
+ExecStop=/usr/bin/umount /var/vmail
+
+[Install]
+WantedBy=multi-user.target

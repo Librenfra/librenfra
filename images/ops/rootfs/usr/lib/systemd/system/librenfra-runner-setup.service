@@ -1,0 +1,17 @@
+[Unit]
+Description=Librenfra GitHub Actions runner'ını hazırla
+Requires=librenfra-data.service
+After=librenfra-data.service network-online.target cloud-config.service
+Wants=network-online.target
+Before=librenfra-runner.service
+ConditionPathExists=/etc/librenfra/ops.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/librenfra/runner-setup
+# GitHub'a ulaşılamazsa kayıt sonraki açılışta yeniden denenir.
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

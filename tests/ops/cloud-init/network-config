@@ -1,0 +1,10 @@
+version: 2
+ethernets:
+  nic0:
+    match:
+      macaddress: "@NIC0_MAC@"
+    dhcp4: true
+  nic1:
+    match:
+      macaddress: "@NIC1_MAC@"
+    addresses: [10.99.0.40/24]

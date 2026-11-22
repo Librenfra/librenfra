@@ -1,0 +1,8 @@
+# https://github.com/cri-o/packaging#readme
+# Anahtar parmak izi: 85B6 7D5C 5010 0B1A C8CE FE49 CBA9 C856 40A2 B579
+# OBS anahtarlarının süresi düzenli uzatıldığı için anahtar depodan (HTTPS) alınır.
+[cri-o]
+name=CRI-O v1.37
+baseurl=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v1.37/rpm/
+gpgcheck=1
+gpgkey=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v1.37/rpm/repodata/repomd.xml.key

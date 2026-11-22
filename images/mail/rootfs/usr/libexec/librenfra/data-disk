@@ -1,0 +1,16 @@
+#!/bin/bash
+# Makinenin veri diskini bulur, boşsa biçimlendirir ve verilen dizine bağlar.
+# Disk Proxmox'ta "lnfr-data" seri numarasıyla takılır (infra/modules/bootc-vm).
+# Kullanım: data-disk <bağlama-noktası>
+set -euo pipefail
+where=$1 dev=/dev/disk/by-id/virtio-lnfr-data
+
+mountpoint -q "$where" && exit 0
+udevadm wait --timeout=90 "$dev"
+# Dosya sistemi varsa dokunmaz; yalnızca boş diski biçimlendirir.
+/usr/lib/systemd/systemd-makefs xfs "$dev"
+mkdir -p "$where"
+mount -o noatime "$dev" "$where"
+if command -v restorecon >/dev/null; then restorecon "$where"; fi
+# Bağlama, açılıştaki tmpfiles'ın açtığı dizinleri örter; diskte yeniden açılır.
+systemd-tmpfiles --create --prefix="$where"

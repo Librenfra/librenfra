@@ -23,6 +23,7 @@ write_files:
       LIBRENFRA_REALM=${realm}
       LIBRENFRA_DOMAIN=${netbios_domain}
       LIBRENFRA_DNS_FORWARDER=${dns_forwarder}
+      LIBRENFRA_ADDRESS=${ipv4_address}
   - path: /etc/krb5.conf.d/librenfra-realm
     permissions: "0644"
     content: |
@@ -33,6 +34,15 @@ write_files:
   - path: /etc/librenfra/secrets/dc-admin-password
     permissions: "0600"
     content: ${jsonencode(admin_password)}
+  - path: /etc/librenfra/ca.pem
+    permissions: "0644"
+    content: ${jsonencode(ca_cert)}
+  - path: /etc/librenfra/dc-tls-cert.pem
+    permissions: "0644"
+    content: ${jsonencode(tls_cert)}
+  - path: /etc/librenfra/secrets/dc-tls-key.pem
+    permissions: "0600"
+    content: ${jsonencode(tls_key)}
   - path: /etc/librenfra/dc-accounts
     permissions: "0644"
     content: |

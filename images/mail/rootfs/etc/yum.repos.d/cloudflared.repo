@@ -1,0 +1,7 @@
+# https://pkg.cloudflare.com/index.html
+# Anahtar parmak izi: CC94 B39C 77AE 7342 A68B 8962 8A68 2D30 8D4E 5E73
+[cloudflared-stable]
+name=cloudflared stable
+baseurl=https://pkg.cloudflare.com/cloudflared/rpm
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-cloudflare

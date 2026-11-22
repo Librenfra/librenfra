@@ -1,0 +1,34 @@
+#!/bin/bash
+# ops'un kendi güncellemesi. Runner'ın yetkisi yoktur; pipeline yalnızca istediği imajın adresini
+# /var/lib/librenfra/self-update/image'a yazar. Bu betik root olarak adresi denetler, bootc switch
+# ile yeni imajı hazırlar ve runner'da çalışan iş kalmayınca makineyi yeniden başlatır.
+set -euo pipefail
+request=/var/lib/librenfra/self-update/image
+# Kabul edilen imaj deposu; testte yerel registry'dir.
+LIBRENFRA_IMAGE_REPO=ghcr.io/librenfra/ops
+[ -f /etc/librenfra/ops.conf ] && . /etc/librenfra/ops.conf
+repo_re=$(printf '%s' "$LIBRENFRA_IMAGE_REPO" | sed 's/[.[\*^$+?(){}|/]/\\&/g')
+pattern="^${repo_re}:[0-9A-Za-z._-]{1,128}$"
+
+[ -f "$request" ] || exit 0
+image=$(head -c 200 "$request" | head -n1 | tr -d '[:space:]')
+if ! [[ $image =~ $pattern ]]; then
+    echo "geçersiz istek, yok sayıldı: $image" >&2
+    exit 1
+fi
+booted=$(bootc status --format=json | jq -r '.status.booted.image.image.image // empty')
+staged=$(bootc status --format=json | jq -r '.status.staged.image.image.image // empty')
+if [ "$booted" = "$image" ] && [ -z "$staged" ]; then
+    echo "ops zaten $image"
+    exit 0
+fi
+if [ "$staged" != "$image" ]; then
+    bootc switch "$image"
+fi
+# İsteği bırakan iş bitene kadar bekler: runner bir işi Runner.Worker süreciyle çalıştırır.
+for _ in $(seq 360); do
+    pgrep -u runner -f Runner.Worker >/dev/null || break
+    sleep 10
+done
+echo "ops $image ile yeniden başlıyor"
+systemctl reboot

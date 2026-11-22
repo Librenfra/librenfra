@@ -1,0 +1,53 @@
+#cloud-config
+# Yalnızca test: token ve CA test değerleridir.
+hostname: k8s-w1
+fqdn: k8s-w1.test.lan
+prefer_fqdn_over_hostname: false
+users:
+  - name: librenfra
+    groups: [wheel]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys: ["@SSH_PUBKEY@"]
+manage_etc_hosts: false
+write_files:
+  - path: /etc/hosts
+    content: |
+      127.0.0.1 localhost localhost.localdomain
+      ::1       localhost localhost.localdomain
+      10.99.0.31 k8s-w1.test.lan k8s-w1
+  - path: /etc/librenfra/k8s.conf
+    content: |
+      LIBRENFRA_K8S_ROLE=worker
+      LIBRENFRA_K8S_NODE_IP=10.99.0.31
+      LIBRENFRA_K8S_ENDPOINT=10.99.0.30:6443
+      LIBRENFRA_DC=dc.test.lan
+  - path: /etc/librenfra/k8s-ca.crt
+    encoding: b64
+    content: "@B64:k8s-ca.pem@"
+  - path: /etc/librenfra/secrets/k8s-bootstrap-token
+    permissions: "0600"
+    content: "abcdef.0123456789abcdef"
+  # Test registry'si; imajlar orada yoksa asıl kaynaklarından çekilir.
+  - path: /etc/containers/registries.conf.d/50-vmtest.conf
+    content: |
+      [[registry]]
+      location = "10.0.2.2:5000"
+      insecure = true
+      [[registry]]
+      prefix = "registry.k8s.io"
+      location = "registry.k8s.io"
+      [[registry.mirror]]
+      location = "10.0.2.2:5000/registry.k8s.io"
+      insecure = true
+      [[registry]]
+      prefix = "quay.io"
+      location = "quay.io"
+      [[registry.mirror]]
+      location = "10.0.2.2:5000/quay.io"
+      insecure = true
+      [[registry]]
+      prefix = "docker.io"
+      location = "docker.io"
+      [[registry.mirror]]
+      location = "10.0.2.2:5000/docker.io"
+      insecure = true

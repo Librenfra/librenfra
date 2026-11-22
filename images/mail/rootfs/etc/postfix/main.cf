@@ -1,0 +1,62 @@
+# Librenfra posta sunucusu. Makineye özgü değerler (alan adları, dizin bağlantısı)
+# açılışta /run/librenfra/postfix altına üretilir (librenfra-mail-config.service).
+compatibility_level = 3.8
+
+# Paketin yolları
+queue_directory = /var/spool/postfix
+command_directory = /usr/sbin
+daemon_directory = /usr/libexec/postfix
+data_directory = /var/lib/postfix
+meta_directory = /etc/postfix
+shlib_directory = /usr/lib64/postfix
+mail_owner = postfix
+setgid_group = postdrop
+sendmail_path = /usr/sbin/sendmail.postfix
+newaliases_path = /usr/bin/newaliases.postfix
+mailq_path = /usr/bin/mailq.postfix
+html_directory = no
+manpage_directory = /usr/share/man
+sample_directory = /usr/share/doc/postfix/samples
+readme_directory = /usr/share/doc/postfix/README_FILES
+default_database_type = lmdb
+alias_maps = lmdb:/etc/aliases
+alias_database = lmdb:/etc/aliases
+
+inet_interfaces = all
+inet_protocols = ipv4
+mydestination = $myhostname, localhost
+mynetworks = 127.0.0.0/8
+
+# Posta kutuları dizindeki kullanıcılardır; teslim Dovecot'a LMTP ile yapılır.
+virtual_mailbox_domains = /run/librenfra/postfix/domains
+virtual_mailbox_maps = ldap:/run/librenfra/postfix/recipients.cf
+virtual_transport = lmtp:unix:private/dovecot-lmtp
+smtpd_reject_unlisted_recipient = yes
+
+# Gönderen yalnızca kendi adresini kullanabilir (zarf). Başlıktaki From: rspamd'de denetlenir.
+smtpd_sender_login_maps = ldap:/run/librenfra/postfix/senders.cf
+# Gönderimde (587) boş zarf göndereni de kabul edilmez.
+librenfra_submission_sender_restrictions = check_sender_access inline:{<>=REJECT}, reject_sender_login_mismatch
+
+smtpd_helo_required = yes
+# Başka alanlara aktarım kalıcı olarak reddedilir (varsayılan geçici 454 verir).
+# 127.0.0.1'e de ayrıcalık verilmez: Cloudflare'dan gelen posta (librenfra-mail-inbound)
+# 25'e oradan bağlanır ve dışarıdan gelen posta gibi denetlenmelidir.
+smtpd_relay_restrictions = permit_sasl_authenticated, reject_unauth_destination
+smtpd_recipient_restrictions = reject_unauth_destination
+
+smtpd_tls_cert_file = /etc/librenfra/mail-tls-cert.pem
+smtpd_tls_key_file = /etc/librenfra/secrets/mail-tls-key.pem
+smtpd_tls_security_level = may
+smtpd_tls_auth_only = yes
+smtp_tls_CAfile = /etc/pki/tls/certs/ca-bundle.crt
+smtp_tls_security_level = may
+
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+
+# Gelen ve giden bütün posta rspamd'den geçer; rspamd yanıt vermezse posta geri çevrilmez, bekletilir.
+smtpd_milters = inet:127.0.0.1:11332
+non_smtpd_milters = $smtpd_milters
+milter_default_action = tempfail
+milter_protocol = 6

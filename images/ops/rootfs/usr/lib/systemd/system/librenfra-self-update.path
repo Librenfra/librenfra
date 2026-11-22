@@ -1,0 +1,16 @@
+[Unit]
+Description=ops'un kendi güncellemesi için pipeline'ın isteğini bekler
+# İstek veri diskindedir; diski bağlayan servisten sonra izlenmelidir. Path birimlerinin
+# varsayılan bağımlılıkları (paths.target'tan önce) bununla döngü kurar.
+DefaultDependencies=no
+Requires=librenfra-data.service
+After=librenfra-data.service
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Path]
+PathChanged=/var/lib/librenfra/self-update/image
+Unit=librenfra-self-update.service
+
+[Install]
+WantedBy=multi-user.target

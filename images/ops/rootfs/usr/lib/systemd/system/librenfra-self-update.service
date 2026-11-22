@@ -1,0 +1,10 @@
+[Unit]
+Description=ops'u pipeline'ın istediği imaja geçirir ve iş bitince yeniden başlatır
+Requires=librenfra-data.service
+After=librenfra-data.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/librenfra/self-update
+TimeoutStartSec=2h

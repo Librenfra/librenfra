@@ -1,0 +1,15 @@
+[Unit]
+Description=Librenfra dizin sunucusunu bekle
+Requires=librenfra-mail-config.service
+After=librenfra-mail-config.service network-online.target
+Wants=network-online.target
+Before=postfix.service dovecot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/librenfra/mail-wait-dc
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=multi-user.target

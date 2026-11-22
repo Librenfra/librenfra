@@ -1,0 +1,13 @@
+[Unit]
+Description=Librenfra posta ayarı (dizin bağlantısı)
+After=cloud-config.service
+Before=postfix.service dovecot.service rspamd.service
+ConditionPathExists=/etc/librenfra/mail.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/librenfra/mail-config
+
+[Install]
+WantedBy=multi-user.target

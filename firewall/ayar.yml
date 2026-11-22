@@ -1,0 +1,161 @@
+# OPNsense ayarı: segment kuralları, DNS ve DHCP. OPNsense API'si ile uygulanır.
+#
+#   ansible-playbook firewall/ayar.yml -e @<ortam değerleri>          uygular
+#   ansible-playbook firewall/ayar.yml -e @<ortam değerleri> --check --diff
+#                                         firewall ile git arasındaki farkı raporlar, değiştirmez
+#
+# Ortam değerleri: fw_host (API adresi), fw_credentials (OPNsense'in "key=..." / "secret=..."
+# biçimindeki API anahtar dosyası), fw_ca (arayüz sertifikasını imzalayan CA), domain (dizinin
+# DNS alanı) ve dc_address (dizin sunucusu).
+#
+# Kurallar ve takma adlar bu dosyadakilerle birebir tutulur: burada olmayan bir kural ya da takma
+# ad silinir. Arayüzler, adresler, NAT (otomatik giden NAT) ve API kullanıcısı ilk ayardadır
+# (config.xml.tftpl).
+- name: OPNsense ayarı
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    segments:
+      lan: { ifname: lan, net: 10.10.10.0/24, gateway: 10.10.10.1 }
+      dmz: { ifname: opt1, net: 10.10.20.0/24, gateway: 10.10.20.1 }
+      lab: { ifname: opt2, net: 10.10.30.0/24, gateway: 10.10.30.1 }
+    mail_address: 10.10.20.10
+    lab_dhcp: { start: 10.10.30.100, end: 10.10.30.199 }
+
+  module_defaults:
+    group/ansibleguy.opnsense.all:
+      firewall: "{{ fw_host }}"
+      api_credential_file: "{{ fw_credentials }}"
+      ssl_verify: true
+      ssl_ca_file: "{{ fw_ca }}"
+      api_timeout: 120
+
+  tasks:
+    - name: Takma adlar
+      ansibleguy.opnsense.alias:
+        multi:
+          - name: ic_aglar
+            type: network
+            content: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+            description: "Özel adres blokları: segmentler, ev ağı ve firewall'un kendi adresleri"
+          - name: dizin
+            type: host
+            content: ["{{ dc_address }}"]
+            description: Dizin sunucusu (dc)
+          - name: dizin_tcp
+            type: port
+            content: ["88", "464", "636"]
+            description: "Kerberos, parola değişimi, LDAPS"
+          - name: dizin_udp
+            type: port
+            content: ["88", "464"]
+            description: "Kerberos, parola değişimi"
+        multi_control:
+          purge_unconfigured: true
+          fail_verify: true
+        reload: true
+
+    # Kurallar her arayüzde yukarıdan aşağı, ilk eşleşen uygulanır. Eşleşmeyen trafik
+    # OPNsense'in varsayılan kuralıyla engellenir. Kurallar açıklamalarından tanınır.
+    - name: Kurallar
+      ansibleguy.opnsense.rule:
+        match_fields: [description]
+        multi:
+          - description: "LAN: her yere"
+            sequence: 100
+            interface: [lan]
+            source_net: lan
+            destination_net: any
+
+          - description: "DMZ: firewall'daki DNS"
+            sequence: 200
+            interface: [opt1]
+            protocol: TCP/UDP
+            source_net: opt1
+            destination_net: opt1ip
+            destination_port: "53"
+          - description: "DMZ: mail'den dizine (TCP)"
+            sequence: 210
+            interface: [opt1]
+            protocol: TCP
+            source_net: "{{ mail_address }}"
+            destination_net: dizin
+            destination_port: dizin_tcp
+          - description: "DMZ: mail'den dizine (UDP)"
+            sequence: 211
+            interface: [opt1]
+            protocol: UDP
+            source_net: "{{ mail_address }}"
+            destination_net: dizin
+            destination_port: dizin_udp
+          - description: "DMZ: iç ağlara erişim yok"
+            sequence: 290
+            action: block
+            interface: [opt1]
+            source_net: opt1
+            destination_net: ic_aglar
+          - description: "DMZ: internete"
+            sequence: 299
+            interface: [opt1]
+            source_net: opt1
+            destination_net: any
+
+          - description: "LAB: firewall'daki DNS"
+            sequence: 300
+            interface: [opt2]
+            protocol: TCP/UDP
+            source_net: opt2
+            destination_net: opt2ip
+            destination_port: "53"
+          - description: "LAB: DHCP"
+            sequence: 301
+            interface: [opt2]
+            protocol: UDP
+            source_net: any
+            destination_port: "67"
+          - description: "LAB: iç ağlara erişim yok"
+            sequence: 390
+            action: block
+            interface: [opt2]
+            source_net: opt2
+            destination_net: ic_aglar
+          - description: "LAB: internete"
+            sequence: 399
+            interface: [opt2]
+            source_net: opt2
+            destination_net: any
+        multi_control:
+          purge_unconfigured: true
+          fail_verify: true
+        reload: true
+
+    # Dizinin alanı (ör. librenfra.lan) dc'ye sorulur; geri kalan adları Unbound kendisi çözer.
+    - name: "DNS: dizinin alanı dc'ye"
+      ansibleguy.opnsense.unbound_forward:
+        domain: "{{ domain }}"
+        target: "{{ dc_address }}"
+        description: Dizinin alanı
+
+    # Aralık değiştiğinde çalışan dnsmasq'a geçmesi için servis yeniden yüklenir; aralık
+    # modülü bunu kendisi yapmıyor.
+    - name: "DHCP: LAB adres aralığı"
+      ansibleguy.opnsense.dnsmasq_range:
+        description: LAB
+        interface: LAB  # bu modül arayüzü açıklamasıyla tanır
+        start_addr: "{{ lab_dhcp.start }}"
+        end_addr: "{{ lab_dhcp.end }}"
+        ra_mode: []  # boş bırakılırsa modül her çalışmada değişiklik görüyor
+      notify: dnsmasq yeniden yüklensin
+    - name: "DHCP: LAB'daki denemeler için, DNS'i kapalı"
+      ansibleguy.opnsense.dnsmasq_general:
+        interfaces: [opt2]
+        port: 0
+      notify: dnsmasq yeniden yüklensin
+
+  handlers:
+    - name: dnsmasq yeniden yüklensin
+      ansibleguy.opnsense.service:
+        name: dnsmasq
+        action: reload

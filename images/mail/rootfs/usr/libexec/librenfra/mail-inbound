@@ -1,0 +1,59 @@
+#!/usr/bin/python3
+"""Cloudflare Email Worker'ın ilettiği postayı Postfix'e teslim eder.
+
+Worker postayı tünel üzerinden POST eder:
+    Authorization: Bearer <token>      (/etc/librenfra/secrets/mail-inbound-token)
+    X-Envelope-From, X-Envelope-To     zarf adresleri
+    gövde                              ham posta (RFC 5322)
+Posta 127.0.0.1:25'e SMTP ile verilir; alıcı denetimi ve rspamd Postfix'te çalışır.
+Yanıt: 200 kabul, 550 kalıcı ret (Worker göndereni reddeder), 451 geçici hata.
+"""
+import hmac
+import http.server
+import smtplib
+import sys
+
+LISTEN = ("127.0.0.1", 8025)
+MAX_SIZE = 50 * 1024 * 1024
+TOKEN = open(sys.argv[1] if len(sys.argv) > 1 else "/etc/librenfra/secrets/mail-inbound-token").read().strip()
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def reply(self, code, text):
+        body = (text + "\n").encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        auth = self.headers.get("Authorization", "")
+        if not hmac.compare_digest(auth.encode(), f"Bearer {TOKEN}".encode()):
+            return self.reply(401, "yetkisiz")
+        size = int(self.headers.get("Content-Length", "0"))
+        if size <= 0 or size > MAX_SIZE:
+            return self.reply(413, "boyut kabul edilmiyor")
+        env_from = self.headers.get("X-Envelope-From", "")
+        env_to = self.headers.get("X-Envelope-To", "")
+        if not env_to:
+            return self.reply(400, "alıcı yok")
+        raw = self.rfile.read(size)
+        try:
+            with smtplib.SMTP("127.0.0.1", 25, local_hostname="cloudflare-email", timeout=120) as s:
+                s.sendmail(env_from, [env_to], raw)
+        except smtplib.SMTPRecipientsRefused as e:
+            code, msg = list(e.recipients.values())[0]
+            return self.reply(550 if 500 <= code < 600 else 451, f"{code} {msg.decode(errors='replace')}")
+        except smtplib.SMTPResponseException as e:
+            return self.reply(550 if 500 <= e.smtp_code < 600 else 451,
+                              f"{e.smtp_code} {e.smtp_error.decode(errors='replace')}")
+        except (smtplib.SMTPException, OSError) as e:
+            return self.reply(451, f"geçici hata: {e}")
+        return self.reply(200, "kabul edildi")
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("%s\n" % (fmt % args))
+
+
+http.server.ThreadingHTTPServer(LISTEN, Handler).serve_forever()

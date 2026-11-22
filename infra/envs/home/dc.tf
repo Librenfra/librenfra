@@ -1,5 +1,6 @@
 locals {
-  dc_ip = "10.10.10.10"
+  dc_ip   = "10.10.10.10"
+  dc_fqdn = "dc.${lower(var.realm)}"
   # Diğer rollerin dizinde ihtiyaç duyduğu gruplar ve servis hesapları.
   dc_groups = ["mail-users"]
   dc_service_accounts = {
@@ -44,12 +45,15 @@ module "dc" {
   user_data = templatefile("${path.module}/templates/dc-user-data.yaml.tftpl", {
     hostname            = "dc"
     ipv4_address        = local.dc_ip
-    fqdn                = "dc.${lower(var.realm)}"
-    ssh_authorized_keys = var.ssh_authorized_keys
+    fqdn                = local.dc_fqdn
+    ssh_authorized_keys = local.ssh_authorized_keys
     realm               = var.realm
     netbios_domain      = var.netbios_domain
     dns_forwarder       = local.gateway["lan"]
     admin_password      = var.dc_admin_password
+    ca_cert             = tls_self_signed_cert.ca.cert_pem
+    tls_cert            = tls_locally_signed_cert.host["dc"].cert_pem
+    tls_key             = tls_private_key.host["dc"].private_key_pem
     groups              = local.dc_groups
     service_accounts = { for name, a in local.dc_service_accounts : name => {
       groups   = a.groups

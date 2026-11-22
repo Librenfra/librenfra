@@ -1,0 +1,24 @@
+FROM quay.io/centos-bootc/centos-bootc:stream10
+
+# rspamd ve cloudflared kendi depolarından, rspamd'nin bağımlılıkları EPEL'den gelir.
+COPY rootfs/etc/yum.repos.d/ /etc/yum.repos.d/
+COPY rootfs/etc/pki/rpm-gpg/ /etc/pki/rpm-gpg/
+RUN dnf -y install --setopt=install_weak_deps=0 \
+        postfix postfix-ldap dovecot rspamd cloudflared openldap-clients cloud-init \
+        policycoreutils-python-utils \
+    && dnf clean all \
+    && rm -rf /var/cache/* /var/log/* /var/lib/dnf /run/*
+
+COPY rootfs/ /
+RUN chmod 0755 /usr/libexec/librenfra/* \
+    && /usr/libexec/librenfra/postfix-master \
+    && semanage fcontext -a -t mail_spool_t '/var/vmail(/.*)?' \
+    && systemctl enable librenfra-data.service librenfra-mail-config.service \
+        librenfra-mail-wait-dc.service postfix.service dovecot.service rspamd.service \
+        cloudflared.service librenfra-mail-inbound.service cloud-init.target \
+    && systemctl mask bootc-fetch-apply-updates.timer
+
+ARG VERSION=0.0.0-dev
+LABEL org.opencontainers.image.version="${VERSION}"
+RUN mkdir -p /usr/lib/librenfra && echo "${VERSION}" > /usr/lib/librenfra/mail-version
+RUN bootc container lint

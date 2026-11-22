@@ -1,0 +1,40 @@
+#!/bin/bash
+# Runner'ı veri diskinde hazırlar; her açılışta çalışır.
+#   1. İmajdaki runner'ı (/usr/lib/actions-runner) veri diskine kopyalar. Runner kendi
+#      dizinine yazdığı için salt okunur /usr'dan çalışamaz. Kayıt dosyaları korunur.
+#   2. Runner kayıtlı değilse /etc/librenfra/secrets/runner-token ile GitHub'a kaydeder.
+#      Kayıt token'ı bir saat geçerlidir; kayıt veri diskinde kaldığı için yeniden
+#      kurulan makine token'sız açılır.
+#   3. Ortamı yöneten SSH anahtarını runner kullanıcısına verir.
+# /etc/librenfra/ops.conf:
+#   LIBRENFRA_RUNNER_URL     depo, ör. https://github.com/Librenfra/librenfra
+#   LIBRENFRA_RUNNER_NAME    runner'ın adı (varsayılan: makinenin adı)
+#   LIBRENFRA_RUNNER_LABELS  virgülle ayrılmış etiketler
+set -euo pipefail
+. /etc/librenfra/ops.conf
+dir=/var/lib/librenfra/runner src=/usr/lib/actions-runner
+
+if ! cmp -s "$src/librenfra-version" "$dir/librenfra-version"; then
+    echo "runner $(cat "$src/librenfra-version") veri diskine kopyalanıyor"
+    rsync -a --delete --exclude='/.runner' --exclude='/.credentials*' --exclude='/.env' \
+        --exclude='/.path' --exclude='/_work/' --exclude='/_diag/' --exclude='/.ssh/' "$src/" "$dir/"
+    chown -R runner:runner "$dir"
+fi
+
+key=/etc/librenfra/secrets/ops-ssh-key
+if [ -f "$key" ]; then
+    install -o runner -g runner -m 0600 "$key" /var/lib/librenfra/ssh/id_ed25519
+fi
+
+if [ ! -f "$dir/.runner" ]; then
+    token=/etc/librenfra/secrets/runner-token
+    if [ ! -s "$token" ]; then
+        echo "runner kayıtlı değil ve kayıt token'ı yok: runner başlatılmayacak"
+        exit 0
+    fi
+    cd "$dir"
+    runuser -u runner -- ./config.sh --unattended --replace --disableupdate \
+        --url "$LIBRENFRA_RUNNER_URL" --token "$(cat "$token")" \
+        --name "${LIBRENFRA_RUNNER_NAME:-$(hostname -s)}" \
+        --labels "${LIBRENFRA_RUNNER_LABELS:-librenfra}" --work _work
+fi

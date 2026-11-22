@@ -5,6 +5,10 @@
 #   LIBRENFRA_REALM          ör. KURUM.LAN
 #   LIBRENFRA_DOMAIN         ör. KURUM
 #   LIBRENFRA_DNS_FORWARDER  ör. 1.1.1.1
+#   LIBRENFRA_ADDRESS        isteğe bağlı; Samba yalnızca bu adreste (ve lo'da) dinler ve
+#                            DNS'e yalnızca bu adresi yazar
+# LDAPS sertifikası (isteğe bağlı): /etc/librenfra/dc-tls-cert.pem, /etc/librenfra/ca.pem ve
+# /etc/librenfra/secrets/dc-tls-key.pem. Yoksa Samba kendi imzaladığı sertifikayı üretir.
 # Secret: yönetici parolası systemd credential olarak gelir (admin-password).
 set -euo pipefail
 
@@ -26,6 +30,17 @@ args=(
 )
 if [ -n "${LIBRENFRA_DNS_FORWARDER:-}" ]; then
     args+=(--option="dns forwarder = $LIBRENFRA_DNS_FORWARDER")
+fi
+if [ -n "${LIBRENFRA_ADDRESS:-}" ]; then
+    args+=(--host-ip="$LIBRENFRA_ADDRESS"
+           --option="interfaces = lo $LIBRENFRA_ADDRESS"
+           --option="bind interfaces only = yes")
+fi
+if [ -f /etc/librenfra/dc-tls-cert.pem ]; then
+    args+=(--option="tls enabled = yes"
+           --option="tls certfile = /etc/librenfra/dc-tls-cert.pem"
+           --option="tls keyfile = /etc/librenfra/secrets/dc-tls-key.pem"
+           --option="tls cafile = /etc/librenfra/ca.pem")
 fi
 
 # Samba'nın ürettiği smb.conf /etc'ye değil /var'a yazılır. /etc her deployment'ın kendi

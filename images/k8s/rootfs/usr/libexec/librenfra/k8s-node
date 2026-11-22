@@ -1,0 +1,135 @@
+#!/bin/bash
+# Kubernetes düğümünü her açılışta istenen duruma getirir:
+#   1. Dizinin DNS'i yanıt verene kadar bekler.
+#   2. Düğüm kümede değilse kontrol düğümünde kubeadm init, çalışan düğümde kubeadm join.
+#   3. İmajdaki kubeadm kümeden yeniyse sürüm geçişi yapar (kontrol düğümünde
+#      kubeadm upgrade apply, çalışan düğümde kubeadm upgrade node). Eskiyse
+#      (ör. bootc rollback sonrası) dokunmaz; kubelet'in eski olmasına izin verilir.
+#   4. Kontrol düğümünde imajdaki Calico'yu uygular.
+#
+# /etc/librenfra/k8s.conf:
+#   LIBRENFRA_K8S_ROLE      control-plane | worker
+#   LIBRENFRA_K8S_NODE_IP   düğümün küme içindeki adresi
+#   LIBRENFRA_K8S_ENDPOINT  API sunucusu, <adres>:6443
+#   LIBRENFRA_DC            beklenecek dizin sunucusunun adı
+# /etc/librenfra/k8s-ca.crt, /etc/librenfra/secrets/k8s-ca.key (yalnızca kontrol düğümü),
+# /etc/librenfra/secrets/k8s-bootstrap-token
+set -euo pipefail
+. /etc/librenfra/k8s.conf
+role=$LIBRENFRA_K8S_ROLE node_ip=$LIBRENFRA_K8S_NODE_IP endpoint=$LIBRENFRA_K8S_ENDPOINT
+pod_cidr=10.244.0.0/16      # Calico'nun ayarıyla aynı (/usr/share/librenfra/k8s/calico)
+service_cidr=10.96.0.0/12
+version=$(kubeadm version -o short)
+ca=/etc/librenfra/k8s-ca.crt
+kubectl() { command kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"; }
+
+wait_for() {  # wait_for <açıklama> <komut...>
+    local what=$1; shift
+    until "$@" >/dev/null 2>&1; do echo "$what bekleniyor"; sleep 10; done
+}
+api_ready() { curl -sf --cacert "$ca" "https://$endpoint/readyz"; }
+
+wait_for "dizin DNS'i ($LIBRENFRA_DC)" getent ahostsv4 "$LIBRENFRA_DC"
+
+if [ ! -f /etc/kubernetes/kubelet.conf ]; then
+    # Yarım kalmış bir denemeden kalanları temizle.
+    kubeadm reset -f >/dev/null 2>&1 || true
+    token=$(cat /etc/librenfra/secrets/k8s-bootstrap-token)
+    cfg=/run/librenfra/kubeadm.yaml
+    umask 077
+    if [ "$role" = control-plane ]; then
+        install -d -m 0755 /etc/kubernetes/pki
+        install -m 0644 "$ca" /etc/kubernetes/pki/ca.crt
+        install -m 0600 /etc/librenfra/secrets/k8s-ca.key /etc/kubernetes/pki/ca.key
+        cat > "$cfg" <<CFG
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+bootstrapTokens:
+  # Süresizdir: çalışan düğüm yeniden kurulduğunda aynı token'la yeniden katılır.
+  - token: "$token"
+    ttl: "0s"
+    usages: [signing, authentication]
+    groups: [system:bootstrappers:kubeadm:default-node-token]
+localAPIEndpoint:
+  advertiseAddress: $node_ip
+nodeRegistration:
+  criSocket: unix:///var/run/crio/crio.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: $node_ip
+timeouts:
+  controlPlaneComponentHealthCheck: 20m
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: $version
+controlPlaneEndpoint: $endpoint
+networking:
+  podSubnet: $pod_cidr
+  serviceSubnet: $service_cidr
+# Tek kontrol düğümünde lider seçimi yalnızca bir sürecin çalışmasını sağlar. Varsayılan 15 sn'lik
+# süre, yük altında bileşenlerin kendilerini durdurmasına yol açar; daha uzun süre bunu önler.
+controllerManager:
+  extraArgs:
+    - {name: leader-elect-lease-duration, value: 60s}
+    - {name: leader-elect-renew-deadline, value: 45s}
+    - {name: leader-elect-retry-period, value: 10s}
+scheduler:
+  extraArgs:
+    - {name: leader-elect-lease-duration, value: 60s}
+    - {name: leader-elect-renew-deadline, value: 45s}
+    - {name: leader-elect-retry-period, value: 10s}
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+CFG
+        kubeadm init --config "$cfg"
+    else
+        hash=$(openssl x509 -pubkey -noout -in "$ca" | openssl pkey -pubin -outform der | sha256sum | cut -d' ' -f1)
+        cat > "$cfg" <<CFG
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: $endpoint
+    token: "$token"
+    caCertHashes: ["sha256:$hash"]
+nodeRegistration:
+  criSocket: unix:///var/run/crio/crio.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: $node_ip
+CFG
+        wait_for "API sunucusu ($endpoint)" api_ready
+        kubeadm join --config "$cfg"
+    fi
+    rm -f "$cfg"
+    echo "$version" > /var/lib/librenfra/k8s-node-version
+fi
+
+newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]; }
+
+wait_for "API sunucusu ($endpoint)" api_ready
+if [ "$role" = control-plane ]; then
+    cluster=$(kubectl -n kube-system get configmap kubeadm-config -o jsonpath='{.data.ClusterConfiguration}' |
+        awk '$1=="kubernetesVersion:"{print $2}')
+    if newer "$version" "$cluster"; then
+        echo "küme sürüm geçişi: $cluster -> $version"
+        kubeadm upgrade apply -y "$version"
+        systemctl restart kubelet
+    elif [ "$version" != "$cluster" ]; then
+        echo "küme $cluster, imajdaki kubeadm $version: sürüm geçişi yapılmadı"
+    fi
+    # Sunucu tarafında uygulanır: Calico'nun CRD'leri istemci tarafı uygulamanın sınırını aşar.
+    kubectl apply --server-side --force-conflicts -k /usr/share/librenfra/k8s/calico >/dev/null
+    echo "Calico uygulandı"
+else
+    node=$(cat /var/lib/librenfra/k8s-node-version 2>/dev/null || echo "$version")
+    if newer "$version" "$node"; then
+        echo "düğüm sürüm geçişi: $node -> $version"
+        kubeadm upgrade node
+        systemctl restart kubelet
+    fi
+fi
+echo "$version" > /var/lib/librenfra/k8s-node-version

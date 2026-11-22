@@ -1,0 +1,32 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${fqdn}
+prefer_fqdn_over_hostname: false
+users:
+  - name: librenfra
+    groups: [wheel]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys: ${jsonencode(ssh_authorized_keys)}
+manage_etc_hosts: false
+write_files:
+  - path: /etc/hosts
+    permissions: "0644"
+    content: |
+      127.0.0.1 localhost localhost.localdomain
+      ::1       localhost localhost.localdomain
+      ${ipv4_address} ${fqdn} ${hostname}
+  - path: /etc/librenfra/ops.conf
+    permissions: "0644"
+    content: |
+      LIBRENFRA_RUNNER_URL=${runner_url}
+      LIBRENFRA_RUNNER_NAME=${hostname}
+      LIBRENFRA_RUNNER_LABELS=librenfra-ops
+  - path: /etc/librenfra/secrets/ops-ssh-key
+    permissions: "0600"
+    content: ${jsonencode(ssh_key)}
+%{ if runner_token != null ~}
+  # Bir saat geçerlidir; kayıt ops'un veri diskinde kalır.
+  - path: /etc/librenfra/secrets/runner-token
+    permissions: "0600"
+    content: ${jsonencode(runner_token)}
+%{ endif ~}

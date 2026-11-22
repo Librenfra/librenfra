@@ -13,7 +13,8 @@ COPY rootfs/ /
 
 RUN chmod 0755 /usr/libexec/librenfra/* \
     && ln -sf /var/lib/samba/etc/smb.conf /etc/samba/smb.conf \
-    && systemctl enable librenfra-data.service librenfra-dc-provision.service samba.service librenfra-dc-accounts.service librenfra-dc-spn.service chronyd.service cloud-init.target
+    && systemctl enable librenfra-data.service librenfra-dc-provision.service samba.service librenfra-dc-accounts.service librenfra-dc-spn.service chronyd.service cloud-init.target \
+    && systemctl mask bootc-fetch-apply-updates.timer
 
 ARG VERSION=0.0.0-dev
 LABEL org.opencontainers.image.version="${VERSION}"

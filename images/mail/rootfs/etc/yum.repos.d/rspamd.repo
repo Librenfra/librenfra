@@ -1,0 +1,8 @@
+# https://rspamd.com/downloads.html
+# Anahtar parmak izi: 3FA3 47D5 E599 BE45 95CA 2576 FFA2 32ED BF21 E25E
+[rspamd]
+name=Rspamd stable
+baseurl=https://rspamd.com/rpm-stable/centos-10/$basearch
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rspamd

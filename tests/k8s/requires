@@ -1,0 +1,3 @@
+# Düğümler dizinin DNS'ini bekler; çalışan düğüm aynı imajla açılır (DEP_IMAGE_k8s_w1).
+dc
+k8s-w1

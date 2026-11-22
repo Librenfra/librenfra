@@ -1,0 +1,14 @@
+[Unit]
+Description=Librenfra gelen posta alıcısı (Cloudflare Email Worker -> Postfix)
+After=postfix.service
+Wants=postfix.service
+ConditionPathExists=/etc/librenfra/secrets/mail-inbound-token
+
+[Service]
+DynamicUser=yes
+LoadCredential=token:/etc/librenfra/secrets/mail-inbound-token
+ExecStart=/usr/libexec/librenfra/mail-inbound ${CREDENTIALS_DIRECTORY}/token
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

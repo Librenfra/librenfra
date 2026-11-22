@@ -21,6 +21,7 @@ check() {
     else echo "KALDI  $name"; echo "$out" | tail -5 | sed 's/^/       /'; fail=$((fail+1)); fi
 }
 
+check "otomatik güncelleme kapalı (pipeline günceller)" sh -c "[ \"\$(systemctl is-enabled bootc-fetch-apply-updates.timer)\" = masked ]"
 check "domain kurulumu hata vermedi" sh -c "! systemctl is-failed -q librenfra-dc-provision.service"
 check "samba çalışıyor" systemctl is-active samba.service
 check "SPN güncellemesi" systemctl is-active librenfra-dc-spn.service
@@ -30,6 +31,7 @@ check "DNS: _kerberos._udp SRV kaydı" sh -c "dig +short @127.0.0.1 _kerberos._u
 check "DNS: dış ad forwarder üzerinden"  sh -c "dig +short @127.0.0.1 fedoraproject.org A | grep -qE '^[0-9.]+$'"
 check "Kerberos: Administrator bileti" sh -c "echo \"\$ADMIN_PASSWORD\" | kinit administrator@$realm >/dev/null && klist | grep -q krbtgt/$realm"
 check "LDAP: GSSAPI ile arama" sh -c "ldapsearch -Q -Y GSSAPI -H ldap://$(hostname -f) -b '' -s base defaultNamingContext | grep -q DC="
+check "LDAPS: sertifika CA ile doğrulanıyor" sh -c "LDAPTLS_CACERT=/etc/librenfra/ca.pem LDAPTLS_REQCERT=hard ldapsearch -x -H ldaps://$(hostname -f) -b '' -s base defaultNamingContext | grep -q DC="
 check "samba-tool: kullanıcı listesi" sh -c "samba-tool user list | grep -qx Administrator"
 check "veri diski /var/lib/samba'ya bağlı" sh -c "[ \"\$(findmnt -no SOURCE /var/lib/samba)\" = \"\$(readlink -f /dev/disk/by-id/virtio-lnfr-data)\" ]"
 check "kısa ad FQDN değil" sh -c "[ \"\$(hostname -s)\" = \"\$(hostname)\" ] && [ \"\$(hostname -f)\" = \"\$(hostname).$domain_lc\" ]"

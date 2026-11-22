@@ -1,0 +1,8 @@
+# https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+# Anahtar parmak izi: DE15 B144 86CD 377B 9E87 6E1A 2346 54DA 9A29 6436
+# OBS anahtarlarının süresi düzenli uzatıldığı için anahtar depodan (HTTPS) alınır.
+[kubernetes]
+name=Kubernetes v1.37
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.37/rpm/
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.37/rpm/repodata/repomd.xml.key

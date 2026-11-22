@@ -1,0 +1,17 @@
+[Unit]
+Description=Librenfra Kubernetes düğümü (kubeadm init/join, sürüm geçişi, Calico)
+Wants=network-online.target
+After=network-online.target crio.service
+Requires=crio.service
+ConditionPathExists=/etc/librenfra/k8s.conf
+
+[Service]
+# Açılışı bekletmez: çalışan düğüm, kontrol düğümü ayağa kalkana kadar bekleyebilir.
+Type=simple
+RemainAfterExit=yes
+ExecStart=/usr/libexec/librenfra/k8s-node
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

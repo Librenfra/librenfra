@@ -1,7 +1,10 @@
-release             = "0.1.0"
-opnsense_version    = "26.1"
-opnsense_image_url  = "https://pkg.opnsense.org/releases/26.1/OPNsense-26.1-nano-amd64.img.bz2"
-ssh_authorized_keys = ["ssh-ed25519 AAAA... librenfra"]
-realm               = "AD.ORNEK.COM"
-netbios_domain      = "ORNEK"
+release               = "0.1.0"
+opnsense_version      = "26.7"
+opnsense_image_url    = "https://pkg.opnsense.org/releases/26.7/OPNsense-26.7-nano-amd64.img.bz2"
+opnsense_image_sha256 = "28d5e2f37e40d87468a924e3006ef10e2ddc6de485b85333d9e3958c84d0cb9d"
+ssh_authorized_keys   = ["ssh-ed25519 AAAA... librenfra"]
+realm                 = "AD.ORNEK.COM"
+mail_domains          = ["ornek.com"]
+netbios_domain        = "ORNEK"
 # dc_admin_password secret'tır: TF_VAR_dc_admin_password ortam değişkeniyle verilir.
+# cloudflared_token, mail_inbound_token ve mail_dkim_key: TF_VAR_... ile, infra/cloudflare çıktılarından.

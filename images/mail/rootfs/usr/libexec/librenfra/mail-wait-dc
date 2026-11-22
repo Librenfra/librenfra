@@ -1,0 +1,10 @@
+#!/bin/bash
+# Dizin sunucusu LDAPS'te servis hesabıyla bağlanılabilir olana kadar bekler.
+set -uo pipefail
+. /etc/librenfra/mail.conf
+export LDAPTLS_CACERT=/etc/librenfra/ca.pem LDAPTLS_REQCERT=hard
+until ldapwhoami -x -H "ldaps://$LIBRENFRA_DC" -D "svc-mail@$LIBRENFRA_REALM" \
+        -y /etc/librenfra/secrets/svc-mail >/dev/null 2>&1; do
+    echo "dizin bekleniyor: ldaps://$LIBRENFRA_DC"
+    sleep 10
+done

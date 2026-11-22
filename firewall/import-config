@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Temiz bir OPNsense kurulumuna ilk açılışta config.xml'i içe aktarır.
+
+OPNsense'in kendi içe aktarıcısı (opnsense-importer) /conf/config.xml yokken her açılışta
+seri konsolda birkaç saniye bir tuşa basılmasını bekler, sonra seçilen diskten ya da CD'den
+/conf/config.xml'i alır. Bu betik o konuşmayı seri konsoldan yürütür; ayarı taşıyan CD'yi de
+Proxmox'ta hazırlar.
+
+  import-config --proxmox root@192.168.1.200 --vmid 100 config.xml
+      Proxmox'ta: CD'yi hazırlar, kapalı makineyi açar, `qm terminal` ile içe aktarıcıyı
+      yürütür, açılış bitince CD'yi çıkarır ve siler.
+  import-config --socket konsol.sock config.xml
+      Test için: CD önceden takılı, seri konsol bir UNIX soketinde (QEMU).
+"""
+import argparse
+import os
+import re
+import shlex
+import socket
+import subprocess
+import sys
+import time
+
+PROMPT_IMPORT = "Press any key to start the configuration importer"
+PROMPT_DEVICE = "Select device to import from"
+RESTORED = "Restoring config.xml...done."
+NOT_READY = "No known partition layout was found"
+FAILURES = (
+    "The device could not be mounted.",
+    "The file /conf/config.xml could not be found.",
+    "Bootstrapping config.xml",
+)
+BOOTED = re.compile(r"login: ?$", re.M)
+
+
+class Console:
+    """Seri konsol: okunanları biriktirir, bir deseni bekler."""
+
+    def __init__(self, log):
+        self.buf = ""
+        self.log = log
+
+    def expect(self, patterns, timeout):
+        end = time.time() + timeout
+        while True:
+            for i, pat in enumerate(patterns):
+                if isinstance(pat, re.Pattern):
+                    m = pat.search(self.buf)
+                    pos = m.end() if m else -1
+                else:
+                    pos = self.buf.find(pat)
+                    pos = pos + len(pat) if pos >= 0 else -1
+                if pos >= 0:
+                    seen, self.buf = self.buf[:pos], self.buf[pos:]
+                    return i, seen
+            if time.time() > end:
+                raise TimeoutError(f"konsolda beklenen çıktı gelmedi: {patterns}")
+            data = self.read(min(1.0, max(0.1, end - time.time())))
+            if data:
+                text = data.decode("utf-8", "replace").replace("\r", "")
+                self.log.write(text)
+                self.log.flush()
+                self.buf += text
+
+    def send(self, text):
+        self.write(text.encode())
+
+
+class SocketConsole(Console):
+    def __init__(self, path, log):
+        super().__init__(log)
+        self.sock = socket.socket(socket.AF_UNIX)
+        self.sock.connect(path)
+
+    def read(self, timeout):
+        self.sock.settimeout(timeout)
+        try:
+            data = self.sock.recv(65536)
+        except socket.timeout:
+            return b""
+        if not data:
+            raise EOFError("konsol kapandı")
+        return data
+
+    def write(self, data):
+        self.sock.sendall(data)
+
+    def close(self):
+        self.sock.close()
+
+
+class CommandConsole(Console):
+    """Bir komutun stdin/stdout'u (ör. `ssh -tt proxmox qm terminal 100`)."""
+
+    def __init__(self, argv, log):
+        super().__init__(log)
+        import os
+        self.proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+        self.fd = self.proc.stdout.fileno()
+        os.set_blocking(self.fd, False)
+
+    def read(self, timeout):
+        import os
+        import select
+        r, _, _ = select.select([self.fd], [], [], timeout)
+        if not r:
+            return b""
+        data = os.read(self.fd, 65536)
+        if not data:
+            raise EOFError("konsol komutu bitti")
+        return data
+
+    def write(self, data):
+        self.proc.stdin.write(data)
+        self.proc.stdin.flush()
+
+    def close(self):
+        self.proc.terminate()
+        self.proc.wait(timeout=10)
+
+
+def run_importer(con, boot_timeout):
+    """İçe aktarıcının istemine tuşa basar, CD'yi seçer, açılışın bitmesini bekler."""
+    _, seen = con.expect([PROMPT_IMPORT, BOOTED], boot_timeout)
+    if PROMPT_IMPORT not in seen:
+        raise RuntimeError("içe aktarıcı çalışmadı: bu kurulumda zaten bir config.xml var")
+    con.send("y")
+    _, devices = con.expect([PROMPT_DEVICE], 120)
+    # Yavaş bir açılışta CD sürücüsü listede henüz adsız olabilir; Proxmox makinesinde tek CD
+    # vardır ve FreeBSD'de adı cd0'dır. Sürücü henüz hazır değilse içe aktarıcı yeniden sorar.
+    cds = sorted(set(re.findall(r"\((?:[a-z]+\d+,)*(cd\d+)[,)]", devices)))
+    if len(cds) > 1:
+        raise RuntimeError(f"tek bir CD sürücüsü beklenirdi, bulunan: {cds}")
+    cd = cds[0] if cds else "cd0"
+    for _ in range(30):
+        con.expect(["leave blank to exit: "], 30)
+        con.send(cd + "\r")
+        i, seen = con.expect([RESTORED, NOT_READY, *FAILURES], 300)
+        if i != 1:
+            break
+        time.sleep(2)
+        con.expect([PROMPT_DEVICE], 60)
+    if i != 0:
+        reason = NOT_READY if i == 1 else FAILURES[i - 2]
+        raise RuntimeError(f"içe aktarma başarısız: {reason}")
+    con.expect([BOOTED], boot_timeout)
+
+
+# ops'ta Proxmox'un anahtarı runner'ın known_hosts'unda değil, LIBRENFRA_KNOWN_HOSTS'tadır.
+SSH = ["ssh", "-o", "BatchMode=yes"] + (
+    ["-o", "UserKnownHostsFile=" + os.environ["LIBRENFRA_KNOWN_HOSTS"]]
+    if os.environ.get("LIBRENFRA_KNOWN_HOSTS") else [])
+
+
+def ssh(target, command, **kw):
+    return subprocess.run(SSH + [target, command], check=True, **kw)
+
+
+def proxmox(args, config, log):
+    vmid = str(args.vmid)
+    q = shlex.quote
+    volume = f"{args.iso_storage}:iso/librenfra-fw-{vmid}-config.iso"
+    status = ssh(args.proxmox, f"qm status {q(vmid)}", capture_output=True, text=True).stdout
+    if "stopped" not in status:
+        raise RuntimeError(f"makine {vmid} kapalı olmalı (durum: {status.strip()}); içe aktarma yalnızca ilk açılışta yapılır")
+    path = ssh(args.proxmox, f"pvesm path {q(volume)}", capture_output=True, text=True).stdout.strip()
+    ssh(args.proxmox,
+        "set -e; d=$(mktemp -d); trap 'rm -rf \"$d\"' EXIT; mkdir \"$d/conf\"; "
+        "umask 077; cat > \"$d/conf/config.xml\"; "
+        f"genisoimage -quiet -R -V LNFRCFG -o {q(path)} \"$d\"", input=config)
+    try:
+        ssh(args.proxmox, f"qm set {q(vmid)} --ide2 {q(volume + ',media=cdrom')} >/dev/null && qm start {q(vmid)}")
+        con = CommandConsole(SSH + ["-tt", args.proxmox, f"qm terminal {q(vmid)}"], log)
+        try:
+            run_importer(con, args.boot_timeout)
+        finally:
+            con.close()
+    finally:
+        ssh(args.proxmox, f"qm set {q(vmid)} --ide2 none,media=cdrom >/dev/null; rm -f {q(path)}")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--proxmox", metavar="SSH_HEDEFİ")
+    g.add_argument("--socket", metavar="YOL")
+    p.add_argument("--vmid", type=int, default=100)
+    p.add_argument("--iso-storage", default="local")
+    p.add_argument("--boot-timeout", type=int, default=900)
+    p.add_argument("--log", default="-", help="konsol çıktısının yazılacağı dosya (varsayılan stderr)")
+    p.add_argument("config", help="config.xml (- ise stdin)")
+    args = p.parse_args()
+
+    config = sys.stdin.buffer.read() if args.config == "-" else open(args.config, "rb").read()
+    if not config.lstrip().startswith(b"<?xml"):
+        sys.exit("config.xml bir XML dosyası değil")
+    log = sys.stderr if args.log == "-" else open(args.log, "a")
+    try:
+        if args.proxmox:
+            proxmox(args, config, log)
+        else:
+            con = SocketConsole(args.socket, log)
+            try:
+                run_importer(con, args.boot_timeout)
+            finally:
+                con.close()
+    except (RuntimeError, TimeoutError, EOFError, subprocess.CalledProcessError) as e:
+        sys.exit(f"import-config: {e}")
+    print("config.xml içe aktarıldı ve firewall açıldı", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

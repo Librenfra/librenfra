@@ -1,0 +1,18 @@
+version: 2
+ethernets:
+  nic0:
+    match:
+      macaddress: "@NIC0_MAC@"
+    # QEMU user ağı sabittir; DHCP'nin DNS'i (10.0.2.3) dizin adlarını çözemez, bu yüzden
+    # düğümlerin tek çözümleyicisi dc'dir.
+    addresses: [10.0.2.15/24]
+    routes:
+      - to: 0.0.0.0/0
+        via: 10.0.2.2
+  nic1:
+    match:
+      macaddress: "@NIC1_MAC@"
+    addresses: [10.99.0.30/24]
+    nameservers:
+      addresses: [10.99.0.10]
+      search: [test.lan]

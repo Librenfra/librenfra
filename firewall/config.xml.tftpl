@@ -1,0 +1,163 @@
+<?xml version="1.0"?>
+<!--
+  OPNsense'in ilk ayarı. Temiz bir kurulum ilk açılışta bunu içe aktarır (firewall/import-config).
+  Yalnızca makinenin ayağa kalkıp API'den yönetilebilmesi için gerekenler buradadır: arayüzler,
+  adresler, WAN ağ geçidi, LAN'dan çıkış kuralı, arayüz sertifikası ve API kullanıcısı. Segment kuralları, DNS ve
+  NAT ayarı firewall/ayar.yml'den API ile uygulanır.
+-->
+<opnsense>
+  <theme>opnsense</theme>
+  <system>
+    <use_mfs_tmp/>
+    <use_mfs_var/>
+    <serialspeed>115200</serialspeed>
+    <primaryconsole>serial</primaryconsole>
+    <secondaryconsole>video</secondaryconsole>
+    <optimization>normal</optimization>
+    <hostname>${hostname}</hostname>
+    <domain>${domain}</domain>
+%{ for s in dns_servers ~}
+    <dnsserver>${s}</dnsserver>
+%{ endfor ~}
+    <dnsallowoverride>0</dnsallowoverride>
+    <group>
+      <name>admins</name>
+      <description>System Administrators</description>
+      <scope>system</scope>
+      <gid>1999</gid>
+      <member>0</member>
+      <member>2000</member>
+      <priv>page-all</priv>
+    </group>
+    <user>
+      <name>root</name>
+      <descr>System Administrator</descr>
+      <scope>system</scope>
+      <groupname>admins</groupname>
+      <password>${root_password_hash}</password>
+      <uid>0</uid>
+    </user>
+    <user>
+      <name>librenfra</name>
+      <descr>Librenfra pipeline (API)</descr>
+      <scope>user</scope>
+      <groupname>admins</groupname>
+      <password>${api_password_hash}</password>
+      <shell>/sbin/nologin</shell>
+      <apikeys>${api_key}|${api_secret_hash}</apikeys>
+      <uid>2000</uid>
+    </user>
+    <nextuid>2001</nextuid>
+    <nextgid>2000</nextgid>
+    <timezone>Etc/UTC</timezone>
+    <timeservers>0.opnsense.pool.ntp.org 1.opnsense.pool.ntp.org 2.opnsense.pool.ntp.org 3.opnsense.pool.ntp.org</timeservers>
+    <webgui>
+      <protocol>https</protocol>
+      <ssl-certref>librenfra</ssl-certref>
+    </webgui>
+    <disablenatreflection>yes</disablenatreflection>
+    <usevirtualterminal>1</usevirtualterminal>
+    <disableconsolemenu/>
+    <powerd_ac_mode>hadp</powerd_ac_mode>
+    <powerd_battery_mode>hadp</powerd_battery_mode>
+    <powerd_normal_mode>hadp</powerd_normal_mode>
+    <bogons>
+      <interval>monthly</interval>
+    </bogons>
+    <pf_share_forward>1</pf_share_forward>
+    <lb_use_sticky>1</lb_use_sticky>
+    <ssh>
+      <group>admins</group>
+    </ssh>
+  </system>
+  <interfaces>
+    <wan>
+      <enable>1</enable>
+      <if>vtnet0</if>
+      <descr>WAN</descr>
+      <ipaddr>${wan_address}</ipaddr>
+      <subnet>${wan_prefix}</subnet>
+      <gateway>WAN_GW</gateway>
+      <blockpriv>0</blockpriv>
+      <blockbogons>1</blockbogons>
+    </wan>
+%{ for name, s in segments ~}
+    <${s.ifname}>
+      <enable>1</enable>
+      <if>${s.device}</if>
+      <descr>${upper(name)}</descr>
+      <ipaddr>${s.address}</ipaddr>
+      <subnet>${s.prefix}</subnet>
+    </${s.ifname}>
+%{ endfor ~}
+  </interfaces>
+  <sysctl>
+    <!-- OPNsense 26.7'de çekirdek TLS'i (kTLS) açıkken arayüzün HTTP/1.1 yanıtları büyük
+         gövdelerde bozuluyor (64 KiB'den sonra hatalı chunk); API istemcisi HTTP/1.1 kullanır.
+         Lab'da sınandı; bkz. forum.opnsense.org/index.php?topic=52389.0 -->
+    <item>
+      <tunable>kern.ipc.tls.enable</tunable>
+      <value>0</value>
+      <descr>Librenfra: arayüz yanıtlarının bozulmaması için kTLS kapalı</descr>
+    </item>
+  </sysctl>
+  <unbound>
+    <enable>1</enable>
+  </unbound>
+  <nat>
+    <outbound>
+      <mode>automatic</mode>
+    </outbound>
+  </nat>
+  <filter>
+  </filter>
+  <cert>
+    <refid>librenfra</refid>
+    <descr>Librenfra CA ile imzalı arayüz sertifikası</descr>
+    <crt>${base64encode(tls_cert)}</crt>
+    <prv>${base64encode(tls_key)}</prv>
+  </cert>
+  <ntpd>
+    <prefer>0.opnsense.pool.ntp.org</prefer>
+    <ispool>0.opnsense.pool.ntp.org 1.opnsense.pool.ntp.org 2.opnsense.pool.ntp.org 3.opnsense.pool.ntp.org</ispool>
+  </ntpd>
+  <OPNsense>
+    <Gateways>
+      <gateway_item>
+        <disabled>0</disabled>
+        <name>WAN_GW</name>
+        <descr>Ev ağı ağ geçidi</descr>
+        <interface>wan</interface>
+        <ipprotocol>inet</ipprotocol>
+        <gateway>${wan_gateway}</gateway>
+        <defaultgw>1</defaultgw>
+        <monitor_disable>1</monitor_disable>
+        <priority>255</priority>
+        <weight>1</weight>
+      </gateway_item>
+    </Gateways>
+    <Firewall>
+      <Filter>
+        <rules>
+          <rule>
+            <enabled>1</enabled>
+            <statetype>keep</statetype>
+            <sequence>100</sequence>
+            <action>pass</action>
+            <quick>1</quick>
+            <interface>lan</interface>
+            <direction>in</direction>
+            <ipprotocol>inet</ipprotocol>
+            <protocol>any</protocol>
+            <source_net>lan</source_net>
+            <destination_net>any</destination_net>
+            <description>LAN: her yere</description>
+          </rule>
+        </rules>
+        <snatrules/>
+        <npt/>
+        <onetoone/>
+      </Filter>
+    </Firewall>
+  </OPNsense>
+</opnsense>
