@@ -14,4 +14,8 @@ runs:
         sudo chown "$(id -u):$(id -g)" /mnt /mnt/vm-test
         sudo mount --bind /mnt/containers /var/lib/containers
         ls -l /dev/kvm
+        # KVM'in çalıştığını gösterir: diski olmayan bir makine 5 saniyede SeaBIOS'u açmalı.
+        sudo timeout 5 qemu-system-x86_64 -accel kvm -cpu host -m 256 -display none -nodefaults \
+            -chardev file,id=bios,path=/tmp/kvm-smoke.log -device isa-debugcon,iobase=0x402,chardev=bios || true
+        grep -m1 SeaBIOS /tmp/kvm-smoke.log || { echo "KVM ile SeaBIOS açılmadı" >&2; exit 1; }
         echo "VMTEST_DIR=/mnt/vm-test" >> "$GITHUB_ENV"

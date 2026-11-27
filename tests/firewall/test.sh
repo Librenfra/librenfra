@@ -123,8 +123,11 @@ qemu-system-x86_64 -machine q35 -accel "${QEMU_ACCEL:-kvm:tcg}" -cpu "${QEMU_CPU
     -serial chardev:s0 > "$work/qemu.log" 2>&1 & pids+=($!)
 for _ in $(seq 100); do [ -S "$work/console.sock" ] && break; sleep 0.2; done
 set +e
-check "config.xml ilk açılışta içe aktarıldı" \
-    python3 "$repo/firewall/import-config" --socket "$work/console.sock" --log "$work/import.log" "$work/config.xml"
+import_config() {
+    python3 "$repo/firewall/import-config" --socket "$work/console.sock" --log "$work/import.log" "$work/config.xml" ||
+        { echo "--- konsol (son satırlar)"; tail -c 3000 "$work/import.log" 2>/dev/null | tail -25; return 1; }
+}
+check "config.xml ilk açılışta içe aktarıldı" import_config
 
 api_is() { [ "$(in_ns lan curl -sS -m 60 --cacert "$work/pki/ca.pem" -u "$2" -o /dev/null -w '%{http_code}' \
     "https://10.10.10.1/api/$3")" = "$1" ]; }
@@ -143,9 +146,11 @@ EOF
 # koleksiyonla (ortamdaki sürümlerle) çalışır. Lab ortamının vekil değişkenleri ad alanında geçersizdir.
 play() {
     if [ -n "${OPS_IMAGE:-}" ]; then
-        podman run --rm --http-proxy=false --network ns:/run/netns/lnfr-lan -v "$repo:$repo:ro" -v "$work:$work:ro" \
+        # İmajda /mnt ve /home /var'a bağlantıdır ve hedefleri yoktur; dizinler sabit yerlere bağlanır.
+        sed "s|$work|/work|g" "$work/vars.yml" > "$work/vars-ops.yml"
+        podman run --rm --http-proxy=false --network ns:/run/netns/lnfr-lan -v "$repo:/repo:ro" -v "$work:/work:ro" \
             -e ANSIBLE_LOCALHOST_WARNING=False -e ANSIBLE_INVENTORY_UNPARSED_WARNING=False \
-            "$OPS_IMAGE" ansible-playbook "$repo/firewall/ayar.yml" -e "@$work/vars.yml" "$@"
+            "$OPS_IMAGE" ansible-playbook /repo/firewall/ayar.yml -e @/work/vars-ops.yml "$@"
     else
         in_ns lan env -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy -u ALL_PROXY -u all_proxy \
             ANSIBLE_LOCALHOST_WARNING=False ANSIBLE_INVENTORY_UNPARSED_WARNING=False \

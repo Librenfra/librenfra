@@ -124,6 +124,18 @@ jobs:
           new=$REGISTRY/$ROLE:sha-$GITHUB_SHA
           if [ -n "${BASE_IMAGE:-}" ]; then set -- "$BASE_IMAGE" "$new"; else set -- "$new"; fi
           sudo -E bash tools/role-test.sh "$ROLE" "$@"
+      - name: Test makinelerinin kayıtlarını okunur yap
+        if: failure()
+        run: sudo chmod -R a+rX /mnt/vm-test || true
+      - name: Test makinelerinin kayıtları
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rol-testi-${{ matrix.role }}
+          path: |
+            /mnt/vm-test/**/*.log
+            /mnt/vm-test/**/*.ppm
+          if-no-files-found: ignore
 
   firewall-test:
     name: Firewall testi
@@ -155,6 +167,16 @@ jobs:
         run: |
           sudo env PATH="$PATH" OPNSENSE_IMAGE=/mnt/opnsense.img OPS_IMAGE="$REGISTRY/ops:sha-$GITHUB_SHA" \
             bash tests/firewall/test.sh /mnt/fw-test
+      - name: Firewall'un kayıtlarını okunur yap
+        if: failure()
+        run: sudo chmod -R a+rX /mnt/fw-test || true
+      - name: Firewall'un kayıtları
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firewall-testi
+          path: /mnt/fw-test/*.log
+          if-no-files-found: ignore
 
   publish:
     name: Sürümü yayınla

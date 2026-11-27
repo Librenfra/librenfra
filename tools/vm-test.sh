@@ -75,7 +75,38 @@ boot() {
         -netdev socket,id=n1,mcast=230.0.0.1:"${VMTEST_SEGMENT:-31234}" \
         -device virtio-net-pci,netdev=n1,mac="$mac" \
         -display none -serial file:"$m/console.log" \
-        -pidfile "$m/pid" -daemonize
+        -chardev file,id=bios,path="$m/bios.log" -device isa-debugcon,iobase=0x402,chardev=bios \
+        -monitor unix:"$m/monitor.sock",server=on,wait=off \
+        -pidfile "$m/pid" -daemonize 2>"$m/qemu.log"
+}
+
+# Açılmayan makine için: seri konsol, firmware (SeaBIOS) kaydı ve ekranın görüntüsü (screen.ppm).
+diagnose() {
+    local m="$dir/$1"
+    echo "--- $1: seri konsol (son satırlar)" >&2; tail -60 "$m/console.log" >&2
+    echo "--- $1: firmware" >&2; tail -30 "$m/bios.log" >&2
+    echo "--- $1: qemu" >&2; cat "$m/qemu.log" >&2 2>/dev/null || true
+    echo "--- $1: monitor" >&2
+    python3 - "$m/monitor.sock" "$m/screen.ppm" <<'PY2' >&2 || true
+import re, socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])
+out = b""
+for cmd in ("info status", "info registers", f"screendump {sys.argv[2]}"):
+    s.sendall(cmd.encode() + b"\n"); time.sleep(1)
+s.settimeout(2)
+try:
+    while True:
+        b = s.recv(65536)
+        if not b: break
+        out += b
+except socket.timeout:
+    pass
+s.close()
+# Monitörün satır düzenleyicisi her tuşu yankılar; yalnızca komutların çıktısı kalır.
+text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", out.decode(errors="replace"))
+lines = [l.rstrip("\r").split("\r")[-1] for l in text.split("\n")]
+print("\n".join(l for l in lines if l.strip() and not l.startswith(("(qemu)", "QEMU "))))
+PY2
 }
 
 # ostree'nin en yüksek "version" numaralı BLS girdisi, önyükleyicinin seçeceği girdidir.
@@ -135,7 +166,7 @@ wait)
     name=$2 timeout=${3:-900} t=0
     until vm_ssh "$name" true 2>/dev/null; do
         sleep 5; t=$((t+5))
-        [ "$t" -ge "$timeout" ] && { echo "$name: $timeout saniyede SSH açılmadı" >&2; tail -60 "$dir/$name/console.log" >&2; exit 1; }
+        [ "$t" -ge "$timeout" ] && { echo "$name: $timeout saniyede SSH açılmadı" >&2; diagnose "$name"; exit 1; }
     done
     # cloud-init ve açılış işleri bitene kadar bekle
     vm_ssh "$name" 'cloud-init status --wait >/dev/null 2>&1; systemctl is-system-running --wait >/dev/null 2>&1; true'
