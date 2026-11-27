@@ -1,0 +1,49 @@
+# Kurulum ve güncelleme: ortamın içindeki ops makinesinin runner'ında çalışır (tools/deploy.sh).
+# Proxmox API'si ve makineler ev ağındadır; GitHub'ın runner'ları onlara ulaşamaz.
+#
+# Secret'lar "home" ortamında (Settings → Environments) tutulur:
+#   PROXMOX_VE_API_TOKEN, DC_ADMIN_PASSWORD, CLOUDFLARED_TOKEN, MAIL_INBOUND_TOKEN, MAIL_DKIM_KEY
+# Değişkenler: PROXMOX_VE_ENDPOINT, PROXMOX_VE_SSH_USERNAME
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Kurulacak sürüm, ör. 0.2.0 (diskleri ve imajları yayınlanmış olmalı)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-home
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Ortamı güncelle
+    runs-on: [self-hosted, librenfra-ops]
+    environment: home
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+      - name: tools/deploy.sh
+        env:
+          PROXMOX_VE_ENDPOINT: ${{ vars.PROXMOX_VE_ENDPOINT }}
+          PROXMOX_VE_SSH_USERNAME: ${{ vars.PROXMOX_VE_SSH_USERNAME }}
+          PROXMOX_VE_API_TOKEN: ${{ secrets.PROXMOX_VE_API_TOKEN }}
+          TF_VAR_dc_admin_password: ${{ secrets.DC_ADMIN_PASSWORD }}
+          TF_VAR_cloudflared_token: ${{ secrets.CLOUDFLARED_TOKEN }}
+          TF_VAR_mail_inbound_token: ${{ secrets.MAIL_INBOUND_TOKEN }}
+          TF_VAR_mail_dkim_key: ${{ secrets.MAIL_DKIM_KEY }}
+          VERSION: ${{ inputs.version }}
+        run: bash tools/deploy.sh "$VERSION"

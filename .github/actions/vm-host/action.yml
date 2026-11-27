@@ -1,0 +1,15 @@
+# GitHub'ın Ubuntu runner'ını QEMU testleri için hazırlar: KVM, qemu, genisoimage ve geniş disk.
+# İmajlar ve diskler kök dosya sisteminin boş alanına sığmaz; /mnt kullanılır.
+name: vm-host
+description: QEMU ile rol ve firewall testleri için runner hazırlığı
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y -q --no-install-recommends qemu-system-x86 qemu-utils genisoimage
+        sudo mkdir -p /mnt/containers /mnt/vm-test
+        sudo mount --bind /mnt/containers /var/lib/containers
+        ls -l /dev/kvm
+        echo "VMTEST_DIR=/mnt/vm-test" >> "$GITHUB_ENV"

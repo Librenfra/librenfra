@@ -1,0 +1,62 @@
+# Disk: bir sürümün her rolü için qcow2 disk üretir ve sürümün GitHub Release'ine ekler.
+# Proxmox yeni makineleri bu disklerden oluşturur (infra/envs/home, release_base_url).
+name: disk
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Sürüm, ör. 0.2.0 (imajlar ghcr.io/librenfra/<rol>:<sürüm> olarak yayınlanmış olmalı)"
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  REGISTRY: ghcr.io/librenfra
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "geçersiz sürüm: $VERSION"; exit 1; }
+          gh release view "v$VERSION" >/dev/null 2>&1 ||
+            gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "Librenfra $VERSION"
+
+  disk:
+    name: Disk (${{ matrix.role }})
+    needs: release
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        role: [dc, mail, k8s, ops]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vm-host
+      - env:
+          TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          ROLE: ${{ matrix.role }}
+        run: |
+          image=$REGISTRY/$ROLE:$VERSION
+          echo "$TOKEN" | sudo podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          sudo podman pull -q "$image"
+          # Kurulan sistem güncellemeleri aynı adresin sonraki sürümlerinden alır (bootc switch).
+          sudo bash tools/disk.sh "$image" "$image" "/mnt/librenfra-$ROLE-$VERSION.qcow2"
+          sha256sum "/mnt/librenfra-$ROLE-$VERSION.qcow2" | sed 's|/mnt/||' > "/mnt/librenfra-$ROLE-$VERSION.qcow2.sha256"
+          gh release upload "v$VERSION" --clobber \
+            "/mnt/librenfra-$ROLE-$VERSION.qcow2" "/mnt/librenfra-$ROLE-$VERSION.qcow2.sha256"

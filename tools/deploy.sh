@@ -14,6 +14,10 @@
 # TF_VAR_mail_dkim_key). Secret olmayan değişkenler ops'un veri diskindeki home.tfvars'tadır.
 set -euo pipefail
 version=${1:?sürüm gerekli}
+# GitHub boş secret'ı boş metin olarak verir; OpenTofu'da değer verilmemiş (null) sayılsın.
+for v in TF_VAR_cloudflared_token TF_VAR_mail_inbound_token TF_VAR_mail_dkim_key; do
+    [ -n "${!v:-}" ] || unset "$v"
+done
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "geçersiz sürüm: $version" >&2; exit 1; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 data=${LIBRENFRA_DATA:-/var/lib/librenfra}

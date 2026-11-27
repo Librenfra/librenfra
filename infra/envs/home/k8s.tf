@@ -55,7 +55,7 @@ module "k8s" {
   node_name       = var.node_name
   description     = "Librenfra Kubernetes ${each.value.role == "control-plane" ? "kontrol" : "çalışan"} düğümü"
   startup_order   = each.value.order
-  memory_mb       = 4096
+  memory_mb       = 3072
   os_disk_file_id = proxmox_download_file.k8s.id
   os_disk_size_gb = 40
 

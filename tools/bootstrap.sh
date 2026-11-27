@@ -17,13 +17,18 @@
 # Proxmox'un root'una ve makinelere (ssh_authorized_keys) giren anahtar.
 # Ortam değişkenleri:
 #   PROXMOX_VE_ENDPOINT, PROXMOX_VE_API_TOKEN
-#   TF_VAR_dc_admin_password, TF_VAR_cloudflared_token, TF_VAR_mail_inbound_token, TF_VAR_mail_dkim_key
+#   TF_VAR_dc_admin_password
+#   TF_VAR_cloudflared_token, TF_VAR_mail_inbound_token, TF_VAR_mail_dkim_key (isteğe bağlı)
 #   LIBRENFRA_REPO         GitHub deposu (varsayılan Librenfra/librenfra)
 #   LIBRENFRA_STATE_DIR    taşınana kadar state'in durduğu yer (varsayılan ~/.local/state/librenfra)
 # TF_VAR_... değişkenleri aşağıda, kullanılmadan önce denetlenir.
 # shellcheck disable=SC2154
 set -euo pipefail
 version=${1:?sürüm gerekli} tfvars=${2:?home.tfvars gerekli}
+# GitHub boş secret'ı boş metin olarak verir; OpenTofu'da değer verilmemiş (null) sayılsın.
+for v in TF_VAR_cloudflared_token TF_VAR_mail_inbound_token TF_VAR_mail_dkim_key; do
+    [ -n "${!v:-}" ] || unset "$v"
+done
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "geçersiz sürüm: $version" >&2; exit 1; }
 tfvars=$(realpath "$tfvars")
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -36,8 +41,8 @@ say() { echo "== $*"; }
 die() { echo "bootstrap: $*" >&2; exit 1; }
 
 for c in tofu gh jq ssh ssh-add python3; do command -v "$c" >/dev/null || die "$c bulunamadı"; done
-for v in PROXMOX_VE_ENDPOINT PROXMOX_VE_API_TOKEN TF_VAR_dc_admin_password TF_VAR_cloudflared_token \
-         TF_VAR_mail_inbound_token TF_VAR_mail_dkim_key; do
+# Cloudflare'ın değerleri (mail'in internetten posta alıp göndermesi) sonradan da eklenebilir.
+for v in PROXMOX_VE_ENDPOINT PROXMOX_VE_API_TOKEN TF_VAR_dc_admin_password; do
     [ -n "${!v:-}" ] || die "$v verilmeli"
 done
 [ -f "$tfvars" ] || die "$tfvars yok"
@@ -70,12 +75,12 @@ export PROXMOX_VE_SSH_USERNAME=${px%@*}
 
 say "GitHub: home ortamı ($repo)"
 gh api -X PUT "repos/$repo/environments/home" >/dev/null
-secret() { printf '%s' "$2" | gh secret set "$1" --env home -R "$repo"; }
+secret() { [ -z "$2" ] || printf '%s' "$2" | gh secret set "$1" --env home -R "$repo"; }
 secret PROXMOX_VE_API_TOKEN "$PROXMOX_VE_API_TOKEN"
 secret DC_ADMIN_PASSWORD "$TF_VAR_dc_admin_password"
-secret CLOUDFLARED_TOKEN "$TF_VAR_cloudflared_token"
-secret MAIL_INBOUND_TOKEN "$TF_VAR_mail_inbound_token"
-secret MAIL_DKIM_KEY "$TF_VAR_mail_dkim_key"
+secret CLOUDFLARED_TOKEN "${TF_VAR_cloudflared_token:-}"
+secret MAIL_INBOUND_TOKEN "${TF_VAR_mail_inbound_token:-}"
+secret MAIL_DKIM_KEY "${TF_VAR_mail_dkim_key:-}"
 gh variable set PROXMOX_VE_ENDPOINT --env home -R "$repo" --body "$PROXMOX_VE_ENDPOINT"
 gh variable set PROXMOX_VE_SSH_USERNAME --env home -R "$repo" --body "$PROXMOX_VE_SSH_USERNAME"
 

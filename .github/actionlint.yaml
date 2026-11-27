@@ -1,0 +1,4 @@
+# ops'taki runner'ın etiketi (infra/envs/home/templates/ops-user-data.yaml.tftpl)
+self-hosted-runner:
+  labels:
+    - librenfra-ops

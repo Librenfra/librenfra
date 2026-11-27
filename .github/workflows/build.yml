@@ -1,0 +1,195 @@
+# Derleme: her rolün imajı derlenir (Containerfile'lar bootc container lint çalıştırır), rol
+# testleri QEMU'da çalışır. Sürüm etiketinde (v1.2.3) imajlar sürümle yayınlanır, diskler
+# üretilir (disk.yml) ve ortam kurulur ya da güncellenir (deploy.yml).
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REGISTRY: ghcr.io/librenfra
+  TOFU_VERSION: 1.13.2
+
+jobs:
+  static:
+    name: OpenTofu ve Worker testleri
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - run: tofu fmt -check -recursive infra
+      - name: tofu test
+        run: |
+          for d in infra/modules/bootc-vm infra/modules/opnsense-config infra/envs/home infra/cloudflare; do
+            echo "== $d"
+            (cd "$d" && tofu init -backend=false -input=false >/dev/null && tofu test)
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test infra/cloudflare/tests/email.test.mjs
+      - run: bash tests/tools/update-test.sh
+
+  meta:
+    name: Sürüm
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+      push: ${{ steps.v.outputs.push }}
+    steps:
+      - id: v
+        env:
+          SAME_REPO: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"; echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"; echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Fork'tan gelen PR'ların registry'ye yazma yetkisi yoktur; imaj derlenir ama test edilmez.
+          echo "push=$SAME_REPO" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: İmaj (${{ matrix.role }})
+    needs: meta
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [dc, mail, k8s, ops]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Derle
+        run: |
+          sudo podman build --build-arg VERSION=${{ needs.meta.outputs.version }} \
+            -t "$REGISTRY/${{ matrix.role }}:sha-$GITHUB_SHA" images/${{ matrix.role }}
+      - name: Registry'ye gönder (commit etiketiyle)
+        if: needs.meta.outputs.push == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | sudo podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          sudo podman push "$REGISTRY/${{ matrix.role }}:sha-$GITHUB_SHA"
+
+  role-test:
+    name: Rol testi (${{ matrix.role }})
+    needs: [meta, image]
+    if: needs.meta.outputs.push == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [dc, mail, k8s, ops]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vm-host
+      - name: İmajları çek
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ROLE: ${{ matrix.role }}
+        run: |
+          echo "$TOKEN" | sudo podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          sudo podman pull -q "$REGISTRY/$ROLE:sha-$GITHUB_SHA"
+          # Bağımlılık makineleri: adı bir rol değilse (ör. k8s-w1) rolün kendi imajıyla açılır.
+          for dep in $(grep -v '^#' "tests/$ROLE/requires" 2>/dev/null | grep . || true); do
+            dep_role=$dep; [ -d "images/$dep" ] || dep_role=$ROLE
+            sudo podman pull -q "$REGISTRY/$dep_role:sha-$GITHUB_SHA"
+            echo "DEP_IMAGE_${dep//[^A-Za-z0-9_]/_}=$REGISTRY/$dep_role:sha-$GITHUB_SHA" >> "$GITHUB_ENV"
+          done
+          # Son yayınlanan sürüm varsa ondan bu commit'e geçiş (bootc switch) ve geri dönüş sınanır.
+          if sudo podman pull -q "$REGISTRY/$ROLE:latest" 2>/dev/null; then
+            echo "BASE_IMAGE=$REGISTRY/$ROLE:latest" >> "$GITHUB_ENV"
+          fi
+      - name: Rol testi
+        env:
+          ROLE: ${{ matrix.role }}
+        run: |
+          new=$REGISTRY/$ROLE:sha-$GITHUB_SHA
+          if [ -n "${BASE_IMAGE:-}" ]; then set -- "$BASE_IMAGE" "$new"; else set -- "$new"; fi
+          sudo -E bash tools/role-test.sh "$ROLE" "$@"
+
+  firewall-test:
+    name: Firewall testi
+    needs: [meta, image]
+    if: needs.meta.outputs.push == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vm-host
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - name: OPNsense imajı
+        run: |
+          . firewall/opnsense.env
+          curl -fsSL -o /mnt/opnsense.img.bz2 "$OPNSENSE_IMAGE_URL"
+          echo "$OPNSENSE_IMAGE_SHA256  /mnt/opnsense.img.bz2" | sha256sum -c
+          bunzip2 /mnt/opnsense.img.bz2
+          sudo apt-get install -y -q dnsmasq-base
+      - name: Ayar ops imajındaki Ansible ile
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | sudo podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          sudo podman pull -q "$REGISTRY/ops:sha-$GITHUB_SHA"
+      - name: Firewall testi
+        run: |
+          sudo env PATH="$PATH" OPNSENSE_IMAGE=/mnt/opnsense.img OPS_IMAGE="$REGISTRY/ops:sha-$GITHUB_SHA" \
+            bash tests/firewall/test.sh /mnt/fw-test
+
+  publish:
+    name: Sürümü yayınla
+    needs: [meta, static, role-test, firewall-test]
+    if: needs.meta.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: İmajlara sürüm etiketi
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          for role in dc mail k8s ops; do
+            for tag in "$VERSION" latest; do
+              skopeo copy --all --src-creds "$GITHUB_ACTOR:$TOKEN" --dest-creds "$GITHUB_ACTOR:$TOKEN" \
+                "docker://$REGISTRY/$role:sha-$GITHUB_SHA" "docker://$REGISTRY/$role:$tag"
+            done
+          done
+
+  disk:
+    needs: [meta, publish]
+    permissions:
+      contents: write
+      packages: read
+    uses: ./.github/workflows/disk.yml
+    with:
+      version: ${{ needs.meta.outputs.version }}
+
+  # ops'taki runner yalnızca sürüm etiketinde çalışır; pull request'ler ona hiç ulaşmaz.
+  deploy:
+    needs: [meta, disk]
+    if: needs.meta.outputs.release == 'true' && github.event_name == 'push'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      version: ${{ needs.meta.outputs.version }}
+    secrets: inherit
