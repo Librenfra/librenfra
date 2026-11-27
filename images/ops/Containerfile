@@ -11,6 +11,9 @@ ARG RUNNER_SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c
 ARG OPNSENSE_COLLECTION_VERSION=1.2.16
 ARG OPNSENSE_COLLECTION_SHA256=2fb8411fdeb448cf8f075079c6d366e75e7f5eb704f4cfb8b94467ade0a4c50e
 
+# python3-httpx (OPNsense koleksiyonu) EPEL 10'dadır.
+COPY rootfs/etc/yum.repos.d/ /etc/yum.repos.d/
+COPY rootfs/etc/pki/rpm-gpg/ /etc/pki/rpm-gpg/
 # lttng-ust, libicu ve krb5-libs runner'ın (.NET) bağımlılıklarıdır.
 RUN dnf -y install --setopt=install_weak_deps=0 \
         cloud-init git-core jq rsync tar openssh-clients ansible-core python3-httpx \

@@ -45,9 +45,14 @@ mock_provider "proxmox" {
     target = module.ops.proxmox_virtual_environment_file.user_data
     values = { id = "local:snippets/ops-user-data.yaml" }
   }
+  # for_each'li modülde her örnek ayrı yazılır (OpenTofu 1.13 modül adresini örneğe uygulamıyor).
   override_resource {
-    target = module.k8s.proxmox_virtual_environment_file.user_data
-    values = { id = "local:snippets/k8s-user-data.yaml" }
+    target = module.k8s["k8s-cp"].proxmox_virtual_environment_file.user_data
+    values = { id = "local:snippets/k8s-cp-user-data.yaml" }
+  }
+  override_resource {
+    target = module.k8s["k8s-w1"].proxmox_virtual_environment_file.user_data
+    values = { id = "local:snippets/k8s-w1-user-data.yaml" }
   }
 }
 
