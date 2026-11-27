@@ -30,6 +30,8 @@ role=$1 image=$2 next=${3:-}
 root=$(cd "$(dirname "$0")/.." && pwd)
 vt() { bash "$root/tools/vm-test.sh" "$@"; }
 disk_tool=${DISK_TOOL:-$root/tools/disk.sh}
+# Test makinelerinin çekirdek ve systemd çıktısı seri konsola, vm-test.sh'in console.log'una düşsün.
+export DISK_KARGS=${DISK_KARGS:-console=ttyS0,115200}
 work=${VMTEST_DIR:-/tmp/vm-test}/role-$role
 mkdir -p "$work"
 export VMTEST_FILES=$work/files

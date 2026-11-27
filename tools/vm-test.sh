@@ -135,7 +135,7 @@ wait)
     name=$2 timeout=${3:-900} t=0
     until vm_ssh "$name" true 2>/dev/null; do
         sleep 5; t=$((t+5))
-        [ "$t" -ge "$timeout" ] && { echo "$name: $timeout saniyede SSH açılmadı" >&2; tail -20 "$dir/$name/console.log" >&2; exit 1; }
+        [ "$t" -ge "$timeout" ] && { echo "$name: $timeout saniyede SSH açılmadı" >&2; tail -60 "$dir/$name/console.log" >&2; exit 1; }
     done
     # cloud-init ve açılış işleri bitene kadar bekle
     vm_ssh "$name" 'cloud-init status --wait >/dev/null 2>&1; systemctl is-system-running --wait >/dev/null 2>&1; true'

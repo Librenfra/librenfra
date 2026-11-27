@@ -10,6 +10,8 @@ runs:
         sudo apt-get update -q
         sudo apt-get install -y -q --no-install-recommends qemu-system-x86 qemu-utils genisoimage
         sudo mkdir -p /mnt/containers /mnt/vm-test
+        # İndirmeler ve diskler runner kullanıcısıyla da /mnt'ye yazılır.
+        sudo chown "$(id -u):$(id -g)" /mnt /mnt/vm-test
         sudo mount --bind /mnt/containers /var/lib/containers
         ls -l /dev/kvm
         echo "VMTEST_DIR=/mnt/vm-test" >> "$GITHUB_ENV"
