@@ -111,10 +111,13 @@ rm -rf "$work/cd" && mkdir -p "$work/cd/conf" && cp "$work/config.xml" "$work/cd
 genisoimage -quiet -R -V LNFRCFG -o "$work/config.iso" "$work/cd"
 rm -f "$work/fw.qcow2" "$work/console.sock"
 qemu-img create -q -f qcow2 -F raw -b "$image" "$work/fw.qcow2" 16G
+# -accel tek hızlandırıcı alır (kvm:tcg geçersizdir): KVM varsa o, yoksa tcg.
+accel=tcg cpu=qemu64
+if [ -w /dev/kvm ]; then accel=kvm cpu=host; fi
 nic() { echo "-netdev tap,id=$1,ifname=lnfr-t-$1,script=no,downscript=no -device virtio-net-pci,netdev=$1"; }
 # nic'in çıktısı bilerek bölünür: her kart iki QEMU argümanıdır.
 # shellcheck disable=SC2046
-qemu-system-x86_64 -machine q35 -accel "${QEMU_ACCEL:-kvm:tcg}" -cpu "${QEMU_CPU:-qemu64}" -smp 2 -m 2048 \
+qemu-system-x86_64 -machine q35 -accel "${QEMU_ACCEL:-$accel}" -cpu "${QEMU_CPU:-$cpu}" -smp 2 -m 2048 \
     -nographic -display none -monitor none \
     -drive "file=$work/fw.qcow2,if=virtio,format=qcow2" \
     -drive "file=$work/config.iso,media=cdrom,if=none,id=cd" -device ide-cd,drive=cd,bus=ide.2 \
@@ -125,7 +128,8 @@ for _ in $(seq 100); do [ -S "$work/console.sock" ] && break; sleep 0.2; done
 set +e
 import_config() {
     python3 "$repo/firewall/import-config" --socket "$work/console.sock" --log "$work/import.log" "$work/config.xml" ||
-        { echo "--- konsol (son satırlar)"; tail -c 3000 "$work/import.log" 2>/dev/null | tail -25; return 1; }
+        { echo "--- konsol (son satırlar)"; tail -c 3000 "$work/import.log" 2>/dev/null | tail -25
+          echo "--- qemu"; tail -20 "$work/qemu.log"; return 1; }
 }
 check "config.xml ilk açılışta içe aktarıldı" import_config
 

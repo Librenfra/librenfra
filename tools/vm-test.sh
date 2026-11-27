@@ -67,7 +67,8 @@ boot() {
     local mac; mac=$(segment_mac "$name")
     qemu-system-x86_64 -accel "$accel" -cpu "$cpu" -smp 2 -m "${VMTEST_MEMORY:-3072}" \
         "${kargs[@]}" \
-        -drive file="$disk",format="$(cat "$m/format")",if=virtio \
+        -drive file="$disk",format="$(cat "$m/format")",if=none,id=root \
+        -device virtio-blk-pci,drive=root,bootindex=0 \
         -drive file="$m/seed.iso",format=raw,if=virtio,readonly=on \
         "${data[@]}" \
         -netdev user,id=n0,hostfwd=tcp:127.0.0.1:"$(cat "$m/port")"-:22 \

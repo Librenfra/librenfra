@@ -24,6 +24,11 @@ podman run --rm --privileged --pid=host \
         --filesystem xfs \
         --target-imgref "$target" \
         "${kargs[@]}" \
-        /output/disk.raw
+        /output/disk.raw >&2
+# BIOS önyüklemesi (SeaBIOS, Proxmox'un varsayılanı) ilk sektörde 55aa imzası ve GRUB ister.
+sfdisk -l "$work/disk.raw" >&2
+sig=$(od -An -tx1 -j510 -N2 "$work/disk.raw" | tr -d ' \n')
+[ "$sig" = 55aa ] || { echo "disk.sh: diskin ilk sektöründe önyükleme imzası yok ($sig)" >&2; exit 1; }
+grep -qa GRUB <(head -c 512 "$work/disk.raw") || { echo "disk.sh: ilk sektörde GRUB yok (BIOS ile açılmaz)" >&2; exit 1; }
 qemu-img convert -c -O qcow2 "$work/disk.raw" "$out"
 echo "$out"
