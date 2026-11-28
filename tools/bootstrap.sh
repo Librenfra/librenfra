@@ -118,6 +118,9 @@ put "$ops_data/tofu/home.tfstate" "$state"
 # Proxmox'un anahtarı: ops'taki ssh (firewall/import-config) LIBRENFRA_KNOWN_HOSTS'a bakar.
 ssh -o BatchMode=yes "$px" cat /etc/ssh/ssh_host_ed25519_key.pub | awk -v h="${px#*@}" '{print h, $1, $2}' \
     | ops sudo -u runner sh -c "'cat >> $ops_data/ssh/known_hosts'"
+# Proxmox API'sinin sertifikasını imzalayan CA: ops'taki tofu API'yi bununla doğrular (deploy.sh).
+ssh -o BatchMode=yes "$px" cat /etc/pve/pve-root-ca.pem \
+    | ops sudo -u runner sh -c "'umask 022; cat > $ops_data/tofu/pve-root-ca.pem'"
 rm -f "$state" "$state.backup"
 echo "state ops'ta: $ops_data/tofu/home.tfstate"
 

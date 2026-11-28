@@ -32,9 +32,12 @@ eval "$(ssh-agent -s)" >/dev/null
 ssh-add -q "$LIBRENFRA_SSH_KEY"
 
 echo "== tofu apply ($version)"
+# Proxmox API'sinin sertifikası Proxmox'un kendi CA'sıyla imzalıdır (bootstrap.sh veri diskine koyar);
+# tofu sistemin CA'larına ek olarak ona güvenir.
+cat /etc/pki/tls/certs/ca-bundle.crt "$data/tofu/pve-root-ca.pem" > "$work/ca-bundle.pem"
 cd "$root/infra/envs/home"
-tofu init -input=false -backend-config="path=$data/tofu/home.tfstate" >/dev/null
-tofu apply -input=false -auto-approve -var-file="$data/tofu/home.tfvars" -var "release=$version"
+SSL_CERT_FILE=$work/ca-bundle.pem tofu init -input=false -backend-config="path=$data/tofu/home.tfstate" >/dev/null
+SSL_CERT_FILE=$work/ca-bundle.pem tofu apply -input=false -auto-approve -var-file="$data/tofu/home.tfvars" -var "release=$version"
 tofu output -raw fw_api_credentials > "$work/fw-api.txt"
 tofu output -raw ca_cert > "$work/ca.pem"
 tofu output -json machines > "$work/machines.json"
