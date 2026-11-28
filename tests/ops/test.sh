@@ -24,6 +24,7 @@ check "runner hazırlığı hata vermedi" systemctl is-active librenfra-runner-s
 check "runner imajdaki sürümle veri diskinde" cmp /usr/lib/actions-runner/librenfra-version $runner/librenfra-version
 check "runner çalışabiliyor" sh -c "[ \"\$(runuser -u runner -- env -i $runner/bin/Runner.Listener --version)\" = \"\$(cat /usr/lib/actions-runner/librenfra-version)\" ]"
 check "runner dizini runner kullanıcısının" sh -c "[ \"\$(stat -c %U $runner $runner/bin/Runner.Listener | sort -u)\" = runner ]"
+check "systemd runner'ı çalıştırabilir (SELinux: bin_t)" sh -c "[ \"\$(stat -c %C $runner/run.sh | cut -d: -f3)\" = bin_t ]"
 check "kayıt token'ı yokken runner başlamaz" sh -c "! test -f $runner/.runner && ! systemctl is-active -q librenfra-runner.service"
 check "ortamın SSH anahtarı runner kullanıcısında" sh -c "[ \"\$(stat -c '%U %a' /var/lib/librenfra/ssh/id_ed25519)\" = 'runner 600' ] && runuser -u runner -- ssh-keygen -y -f /var/lib/librenfra/ssh/id_ed25519 >/dev/null"
 check "runner root değil" sh -c "! id -nG runner | grep -qw wheel"

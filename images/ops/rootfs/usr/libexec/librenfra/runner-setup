@@ -20,6 +20,9 @@ if ! cmp -s "$src/librenfra-version" "$dir/librenfra-version"; then
         --exclude='/.path' --exclude='/_work/' --exclude='/_diag/' --exclude='/.ssh/' "$src/" "$dir/"
     chown -R runner:runner "$dir"
 fi
+# SELinux: systemd (init_t) veri diskindeki var_lib_t dosyalarını çalıştıramaz; runner'ın
+# dizini her açılışta bin_t olarak etiketlenir.
+chcon -R -t bin_t "$dir"
 
 key=/etc/librenfra/secrets/ops-ssh-key
 if [ -f "$key" ]; then
