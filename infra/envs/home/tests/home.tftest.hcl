@@ -6,10 +6,6 @@ mock_provider "proxmox" {
     values = { id = "local:import/librenfra-dc-0.1.0.qcow2" }
   }
   override_resource {
-    target = proxmox_download_file.opnsense
-    values = { id = "local:import/opnsense-26.7-nano.raw" }
-  }
-  override_resource {
     target = module.dc.proxmox_virtual_environment_vm.data
     values = { disk = { path_in_datastore = "vm-9120-disk-0" } }
   }
@@ -165,8 +161,8 @@ run "firewall" {
     error_message = "Firewall kapalı oluşturulmalı (ilk açılışı içe aktarma yapar) ve ayar CD'si için ide2 olmalı"
   }
   assert {
-    condition     = proxmox_download_file.opnsense.checksum == var.opnsense_image_sha256
-    error_message = "OPNsense imajı checksum ile doğrulanmalı"
+    condition     = contains(terraform_data.opnsense_image.triggers_replace, var.opnsense_image_sha256) && proxmox_virtual_environment_vm.fw.disk[0].import_from == "local:import/opnsense-26.7-nano.raw"
+    error_message = "OPNsense imajı checksum ile doğrulanıp import deposundaki açılmış dosyadan alınmalı"
   }
   assert {
     condition     = tls_cert_request.fw.ip_addresses == tolist(["10.10.10.1"]) && tls_cert_request.fw.dns_names == tolist(["fw.ad.ornek.com"])

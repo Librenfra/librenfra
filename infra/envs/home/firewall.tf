@@ -1,19 +1,38 @@
 # OPNsense bootc ile kurulmaz. Disk sabitlenmiş OPNsense sürümünün nano imajından gelir.
 # İlk ayar (firewall/config.xml.tftpl) makine oluşturulduğunda ilk açılışta içe aktarılır;
 # kurallar, DNS ve DHCP firewall/ayar.yml ile API'den uygulanır.
-resource "proxmox_download_file" "opnsense" {
-  content_type            = "import"
-  datastore_id            = "local"
-  node_name               = var.node_name
-  url                     = var.opnsense_image_url
-  file_name               = "opnsense-${var.opnsense_version}-nano.raw"
-  decompression_algorithm = "bz2"
-  checksum                = var.opnsense_image_sha256
-  checksum_algorithm      = "sha256"
+#
+# Proxmox "import" içeriğine indirirken sıkıştırmayı açmaz ("decompression not supported for
+# import"); imaj bu yüzden Proxmox'a SSH ile indirilir, checksum'ı denetlenir ve açılır.
+resource "terraform_data" "opnsense_image" {
+  triggers_replace = [var.opnsense_version, var.opnsense_image_url, var.opnsense_image_sha256]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      ssh -o BatchMode=yes "$LIBRENFRA_PROXMOX_SSH" sh -s -- "$URL" "$SHA256" "$FILE" <<'SH'
+      set -eu
+      url=$1 sha=$2 f=/var/lib/vz/import/$3
+      [ -s "$f" ] && exit 0
+      # .part uzantılı ara dosyaları Proxmox import içeriği olarak listelemez.
+      curl -fsSL -o "$f.bz2.part" "$url"
+      echo "$sha  $f.bz2.part" | sha256sum -c --quiet
+      bunzip2 -c "$f.bz2.part" > "$f.part"
+      mv "$f.part" "$f"
+      rm -f "$f.bz2.part"
+      SH
+    EOT
+    environment = {
+      LIBRENFRA_PROXMOX_SSH = var.proxmox_ssh
+      URL                   = var.opnsense_image_url
+      SHA256                = var.opnsense_image_sha256
+      FILE                  = local.opnsense_file
+    }
+  }
 }
 
 locals {
-  fw_fqdn = "fw.${lower(var.realm)}"
+  opnsense_file = "opnsense-${var.opnsense_version}-nano.raw"
+  fw_fqdn       = "fw.${lower(var.realm)}"
   # OPNsense arayüz adları: vtnet0 WAN, sonra segmentler network_device sırasıyla.
   fw_segments = {
     lan = { ifname = "lan", device = "vtnet1" }
@@ -111,7 +130,7 @@ resource "proxmox_virtual_environment_vm" "fw" {
   disk {
     interface    = "virtio0"
     datastore_id = "local-lvm"
-    import_from  = proxmox_download_file.opnsense.id
+    import_from  = "local:import/${local.opnsense_file}"
     size         = 16
   }
 
@@ -126,6 +145,8 @@ resource "proxmox_virtual_environment_vm" "fw" {
       bridge = proxmox_network_linux_bridge.segment[network_device.value].name
     }
   }
+
+  depends_on = [terraform_data.opnsense_image]
 
   lifecycle {
     ignore_changes = [disk[0].import_from, started]
